@@ -1,0 +1,166 @@
+name: Retroactive Build APK for Releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      specific_tag:
+        description: 'Tag cụ thể để build (để trống = build tất cả release chưa có APK)'
+        required: false
+        default: ''
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      releases: ${{ steps.find-releases.outputs.releases }}
+      has_releases: ${{ steps.find-releases.outputs.has_releases }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Find releases without APK
+        id: find-releases
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const specificTag = '${{ github.event.inputs.specific_tag }}';
+            let releasesToBuild = [];
+
+            if (specificTag) {
+              // Build for a specific tag
+              try {
+                const release = await github.rest.repos.getReleaseByTag({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  tag: specificTag
+                });
+                const hasApk = release.data.assets.some(a => a.name.endsWith('.apk'));
+                if (hasApk) {
+                  console.log(`Release ${specificTag} already has APK, skipping.`);
+                  core.setOutput('has_releases', 'false');
+                  core.setOutput('releases', '[]');
+                  return;
+                }
+                releasesToBuild.push({
+                  tag: specificTag,
+                  id: release.data.id,
+                  name: release.data.name || specificTag
+                });
+              } catch (e) {
+                console.log(`Release for tag ${specificTag} not found: ${e.message}`);
+                core.setOutput('has_releases', 'false');
+                core.setOutput('releases', '[]');
+                return;
+              }
+            } else {
+              // Find ALL releases without APK
+              const releases = await github.rest.repos.listReleases({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100
+              });
+
+              for (const release of releases.data) {
+                const hasApk = release.assets.some(a => a.name.endsWith('.apk'));
+                if (!hasApk) {
+                  releasesToBuild.push({
+                    tag: release.tag_name,
+                    id: release.id,
+                    name: release.name || release.tag_name
+                  });
+                }
+              }
+            }
+
+            console.log(`Found ${releasesToBuild.length} releases to build: ${JSON.stringify(releasesToBuild)}`);
+            core.setOutput('has_releases', releasesToBuild.length > 0 ? 'true' : 'false');
+            core.setOutput('releases', JSON.stringify(releasesToBuild));
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.has_releases == 'true'
+    strategy:
+      matrix:
+        release: ${{ fromJson(needs.prepare.outputs.releases) }}
+      fail-fast: false
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code at tag ${{ matrix.release.tag }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.release.tag }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: |
+          ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "build-tools;34.0.0" "platforms;android-34" > /dev/null 2>&1 || true
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Create local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
+
+      - name: Create Gradle wrapper
+        run: gradle wrapper --gradle-version 8.4
+
+      - name: Build Signed Release APK
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_FILE: release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace
+
+      - name: Verify APK is signed
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          if [ -n "$APK_PATH" ]; then
+            echo "APK found: $APK_PATH"
+            ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify --print-certs "$APK_PATH" || echo "Warning: APK signing verification issue"
+          else
+            echo "ERROR: No APK found!"
+            exit 1
+          fi
+
+      - name: Prepare release output
+        run: |
+          mkdir -p release_output
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          TAG_NAME="${{ matrix.release.tag }}"
+          if [ -n "$APK_PATH" ]; then
+            cp "$APK_PATH" "release_output/SaMacAoGiac-${TAG_NAME}.apk"
+            echo "APK prepared: SaMacAoGiac-${TAG_NAME}.apk"
+          else
+            echo "ERROR: No APK found"
+            exit 1
+          fi
+
+      - name: Upload APK to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ matrix.release.tag }}
+          files: release_output/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

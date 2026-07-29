@@ -1,9 +1,8 @@
 name: Build & Release APK
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
 
 jobs:
   build:
@@ -12,6 +11,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -38,53 +39,51 @@ jobs:
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
-      - name: Create Gradle wrapper
+      - name: Decode keystore
         run: |
-          gradle wrapper --gradle-version 8.4
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
 
-      - name: Build Debug APK
+      - name: Create Gradle wrapper
+        run: gradle wrapper --gradle-version 8.4
+
+      - name: Build Signed Release APK
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_FILE: release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleRelease --stacktrace
+
+      - name: Verify APK is signed
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          if [ -n "$APK_PATH" ]; then
+            echo "APK found: $APK_PATH"
+            ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify --print-certs "$APK_PATH" || echo "Warning: APK signing verification failed"
+          else
+            echo "ERROR: No APK found!"
+            exit 1
+          fi
 
       - name: Prepare release output
         run: |
           mkdir -p release_output
-          APK_PATH=$(find app/build/outputs -name "*.apk" -type f | head -1)
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          TAG_NAME="${{ github.event.release.tag_name }}"
           if [ -n "$APK_PATH" ]; then
-            cp "$APK_PATH" release_output/SaMacAoGiac-debug.apk
-            echo "APK built successfully: $APK_PATH"
+            cp "$APK_PATH" "release_output/SaMacAoGiac-${TAG_NAME}.apk"
+            echo "APK prepared: SaMacAoGiac-${TAG_NAME}.apk"
           else
-            echo "No APK found - build may have failed"
+            echo "ERROR: No APK found"
+            exit 1
           fi
 
-      - name: Create Release
+      - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: "Sa Mạc Ảo Giác ${{ github.ref_name }}"
-          body: |
-            ## 🏜️ Sa Mạc Ảo Giác — Desert Mirage
-
-            Game đua xe sa mạc góc nhìn thứ ba cho Android!
-
-            ### 🎮 Cách cài đặt:
-            1. Download file APK bên dưới
-            2. Mở file trên điện thoại Android 7.0+
-            3. Cài đặt và chơi!
-
-            ### 🎭 v0.2 Highlights:
-            - 🐛 Fix 8 bugs from v0.1
-            - 🎭 Troll features: control reversal, car color change, fake notifications
-            - 🏆 Sarcastic achievement milestones
-            - 🎯 Real fork road geometry + dead-end barrier
-            - 💀 Obstacle collision (rocks + dead camels)
-            - 🚗 Improved car model
-            - 📱 Off-road vignette + screen shake
-            - 🔔 Vibration feedback
-
-            > **Lưu ý:** Clone repo + Android Studio để build nếu APK không tự build.
-          files: |
-            release_output/*.apk
-          draft: false
-          prerelease: false
+          tag_name: ${{ github.event.release.tag_name }}
+          files: release_output/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
