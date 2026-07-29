@@ -1,7 +1,9 @@
 // ============================================================
-// SA MẠC ẢO GIÁC — Game Engine v0.4
-// Fixed: troll timeout leak, double death, keyboard controls,
-//        vibration bridge, camera snap, memory, state management
+// SA MẠC ẢO GIÁC — Game Engine v0.5
+// Fixed: Kotlin duplicate class CI, fork barrier collision,
+//        obstacle recycling, speed-dependent steering,
+//        camera smoothness, pause system, sound FX,
+//        ProGuard rules, mobile polish, memory safety
 // ============================================================
 (function(){
 'use strict';
@@ -19,7 +21,7 @@ const C = {
     CAM_DIST: 16,
     CAM_H: 7.5,
     CAM_LOOK_AHEAD: 12,
-    CAM_LERP: 0.08,
+    CAM_LERP: 0.10,
     OFFROAD_LIMIT: 5,
     KM: 1000,
     EASTER_MS: 3600000,
@@ -28,7 +30,10 @@ const C = {
     MAX_STEER_Y: Math.PI/3.5,
     ROAD_SOFT_EDGE: 3,
     OFFROAD_PUSH: 5,
-    BARRIER_X_LIMIT: 3.5,
+    // FIX: barrier width = 0.7 * ROAD_W = 9.8, half = 4.9
+    // car must be OUTSIDE the barrier zone to pass
+    BARRIER_HALF_W: 4.9,
+    CAR_RADIUS: 1.5,
 };
 
 /* ── STATE ── */
@@ -41,7 +46,7 @@ const S = {
     t0: 0,
     paused: false,
     forkShown: false,
-    dead: false,          // FIX: prevent double death
+    dead: false,
     controlsReversed: false,
     reverseTimer: 0,
     carColorTimer: 0,
@@ -53,6 +58,7 @@ const S = {
     fakeNotifTimer: 0,
     deathCount: 0,
     fakeDeathFlash: 0,
+    bestDist: 0,
 };
 
 /* ── THREE ── */
@@ -66,10 +72,53 @@ let dustPts;
 let groundMeshes = [];
 let isLowDevice = false;
 
-/* ── TIMEOUT TRACKING (FIX: prevent leak) ── */
+/* ── TIMEOUT TRACKING ── */
 let trollTimeout = null;
 let achievementTimeout = null;
 let fogTimeout = null;
+
+/* ── AUDIO ── */
+let audioCtx = null;
+let engineOsc = null, engineGain = null;
+
+function initAudio(){
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        engineOsc = audioCtx.createOscillator();
+        engineGain = audioCtx.createGain();
+        engineOsc.type = 'sawtooth';
+        engineOsc.frequency.value = 80;
+        engineGain.gain.value = 0;
+        engineOsc.connect(engineGain);
+        engineGain.connect(audioCtx.destination);
+        engineOsc.start();
+    } catch(e){}
+}
+
+function updateAudio(){
+    if(!audioCtx || !engineOsc) return;
+    try {
+        // Engine sound frequency based on speed
+        const freq = 60 + (S.speed / C.CAR_MAX_SPEED) * 120;
+        engineOsc.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.1);
+        const vol = S.paused ? 0 : (S.onRoad ? 0.03 : 0.05);
+        engineGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
+    } catch(e){}
+}
+
+function playSfx(freq, dur, vol){
+    if(!audioCtx) return;
+    try {
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type = 'square';
+        o.frequency.value = freq;
+        g.gain.value = vol || 0.06;
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(); o.stop(audioCtx.currentTime + dur);
+    } catch(e){}
+}
 
 /* ── INPUT ── */
 const inp = { left:false, right:false, gas:false, brake:false };
@@ -95,6 +144,9 @@ const spdH = $('speedHud');
 const dstH = $('distHud');
 const tmrH = $('timerHud');
 const dstD = $('deathDist');
+const bestD = $('deathBest');
+const pauseScr = $('pauseScreen');
+const pauseBtn = $('pauseBtn');
 
 /* ── UI ── */
 function onBtn(id, fn){
@@ -117,6 +169,9 @@ function addClick(id, fn){
 addClick('playBtn', startGame);
 addClick('replayBtn', restart);
 addClick('easterBtn', restart);
+addClick('pauseBtn', togglePause);
+addClick('resumeBtn', ()=>{ if(S.paused) togglePause(); });
+addClick('quitBtn', ()=>{ if(S.paused){ S.phase='welcome'; $('welcomeScreen').style.display='flex'; deathScr.style.display='none'; eastScr.style.display='none'; pauseScr.style.display='none'; hudEl.style.display='none'; ctrlEl.style.display='none'; stopLoop(); resetInput(); } });
 
 /* FIX: Keyboard controls for desktop testing */
 document.addEventListener('keydown', e=>{
@@ -128,6 +183,9 @@ document.addEventListener('keydown', e=>{
         if(S.phase==='welcome') startGame();
         else if(S.phase==='dead') restart();
         else if(S.phase==='easter') restart();
+    }
+    if(e.key==='Escape'||e.key==='p'||e.key==='P') {
+        if(S.phase==='playing') togglePause();
     }
 });
 document.addEventListener('keyup', e=>{
@@ -146,6 +204,24 @@ function vibrate(ms){
             navigator.vibrate(ms);
         }
     }catch(e){}
+}
+
+/* ── PAUSE ── */
+function togglePause(){
+    if(S.phase!=='playing') return;
+    S.paused = !S.paused;
+    if(S.paused){
+        pauseScr.style.display='flex';
+        hudEl.style.display='none';
+        ctrlEl.style.display='none';
+        if(audioCtx) audioCtx.suspend();
+    } else {
+        pauseScr.style.display='none';
+        hudEl.style.display='block';
+        ctrlEl.style.display='block';
+        if(audioCtx) audioCtx.resume();
+        clock.start();
+    }
 }
 
 /* ───────────────────────────────────────────
@@ -484,8 +560,15 @@ function recycleDeco(){
     const cZ=carGroup.position.z, total=C.NUM_SEGS*C.SEG_LEN;
     decoPool.forEach(d=>{
         if(!d.userData.isDeco)return;
-        if(d.position.z-cZ>C.SEG_LEN*3){
+        const dz=d.position.z-cZ;
+        if(dz>C.SEG_LEN*3){
             d.position.z-=total;
+            const side=Math.random()>.5?1:-1;
+            d.position.x=side*(C.ROAD_W/2+4+Math.random()*50);
+        }
+        // FIX: also recycle if too far ahead
+        if(dz<-total+C.SEG_LEN){
+            d.position.z+=total;
             const side=Math.random()>.5?1:-1;
             d.position.x=side*(C.ROAD_W/2+4+Math.random()*50);
         }
@@ -500,14 +583,17 @@ function buildObstacles(low){
     for(let i=0;i<20;i++){
         const r=mkRock(oMat);
         const side=Math.random()>.5?1:-1;
-        r.position.set(side*(C.ROAD_W/2-2+Math.random()*3),.2,-(Math.random()*totalLen));
+        // FIX: ensure obstacle is always on the correct side of the road
+        const xOff = 1 + Math.random()*(C.ROAD_W/2-3);
+        r.position.set(side*xOff,.2,-(Math.random()*totalLen));
         r.userData.isObs=true; r.userData.obsRadius=.3+Math.random()*.3;
         scene.add(r); obstaclePool.push(r);
     }
     for(let i=0;i<6;i++){
         const c=mkDeadCamel(camelMat,low);
         const side=Math.random()>.5?1:-1;
-        c.position.set(side*(3+Math.random()*3),0,-(Math.random()*totalLen));
+        const xOff = 1 + Math.random()*3;
+        c.position.set(side*xOff,0,-(Math.random()*totalLen));
         c.userData.isObs=true; c.userData.obsRadius=1.5;
         scene.add(c); obstaclePool.push(c);
     }
@@ -529,16 +615,24 @@ function recycleObs(){
     const cZ=carGroup.position.z, total=C.NUM_SEGS*C.SEG_LEN;
     obstaclePool.forEach(o=>{
         if(!o.userData.isObs)return;
-        if(o.position.z-cZ>C.SEG_LEN*3){
+        const dz=o.position.z-cZ;
+        if(dz>C.SEG_LEN*3){
             o.position.z-=total;
             const side=Math.random()>.5?1:-1;
-            o.position.x=side*(Math.random()*C.ROAD_W/2-1);
+            // FIX: ensure positive X offset on correct side
+            o.position.x=side*(1+Math.random()*(C.ROAD_W/2-3));
+        }
+        // FIX: also recycle if too far ahead
+        if(dz<-total+C.SEG_LEN){
+            o.position.z+=total;
+            const side=Math.random()>.5?1:-1;
+            o.position.x=side*(1+Math.random()*(C.ROAD_W/2-3));
         }
     });
 }
 
 function checkObstacles(){
-    if(S.dead) return; // FIX: prevent double death
+    if(S.dead) return;
     const cx=carGroup.position.x, cz=carGroup.position.z;
     obstaclePool.forEach(o=>{
         if(!o.userData.isObs)return;
@@ -578,6 +672,7 @@ function gameLoop(){
     checkObstacles();
     checkForkBarrier();
     S.dist+=S.speed*dt/C.KM;
+    if(S.dist>S.bestDist) S.bestDist=S.dist;
     checkForkWarning();
     updateCamera();
     recycleSegs(); recycleDeco(); recycleObs();
@@ -585,6 +680,7 @@ function gameLoop(){
     updateTrolls(dt);
     updateShake(dt);
     updateHUD(dt);
+    updateAudio();
     if(Date.now()-S.t0>=C.EASTER_MS) triggerEaster();
     renderer.render(scene,cam);
 }
@@ -611,14 +707,20 @@ function updateCar(dt){
     if(S.controlsReversed){left=inp.right;right=inp.left;}
     if(left) steer=-1; if(right) steer=1;
 
-    carGroup.rotation.y+=steer*C.TURN_RATE*dt;
+    // FIX: speed-dependent steering — less turning at high speed
+    const speedFactor = 1 - (S.speed - C.CAR_MIN_SPEED) / (C.CAR_MAX_SPEED - C.CAR_MIN_SPEED) * 0.35;
+    carGroup.rotation.y+=steer*C.TURN_RATE*speedFactor*dt;
     carGroup.rotation.y=Math.max(-C.MAX_STEER_Y, Math.min(C.MAX_STEER_Y, carGroup.rotation.y));
     if(!left&&!right){
         carGroup.rotation.y*=1-dt*2;
         if(Math.abs(carGroup.rotation.y)<0.01) carGroup.rotation.y=0;
     }
 
-    carGroup.rotation.z=-steer*.08;
+    // FIX: bank angle proportional to steering, not just steer input
+    const targetBank = -steer * 0.08;
+    carGroup.rotation.z += (targetBank - carGroup.rotation.z) * dt * 8;
+
+    // Bounce effect
     carGroup.position.y=Math.sin(Date.now()*0.008)*.02;
 
     const fwd=S.speed*dt;
@@ -656,16 +758,21 @@ function checkRoad(dt){
     }
 }
 
-/* ── FORK BARRIER COLLISION ── */
+/* ── FORK BARRIER COLLISION ──
+   FIX: The barrier is 0.7*ROAD_W wide, centered at x=0.
+   Barrier extends from -4.9 to +4.9 on X axis.
+   Car must be OUTSIDE the barrier zone (|carX| > BARRIER_HALF_W + CAR_RADIUS)
+   to pass on either side. If car is INSIDE the barrier zone, it hits the barrier. */
 function checkForkBarrier(){
-    if(S.dead) return; // FIX: prevent double death
+    if(S.dead) return;
     const cZ=carGroup.position.z;
     const absCX=Math.abs(carGroup.position.x);
     segData.forEach(s=>{
         if(!s.isFork) return;
         const barrierWorldZ = s.grp.position.z + C.SEG_LEN/2 - 15;
         const dz=Math.abs(cZ - barrierWorldZ);
-        if(dz < 2.5 && absCX < C.BARRIER_X_LIMIT) triggerDeath();
+        // Car hits barrier if: within Z range AND inside barrier X range
+        if(dz < 2.5 && absCX < C.BARRIER_HALF_W + C.CAR_RADIUS * C.CAR_SCALE) triggerDeath();
     });
 }
 
@@ -682,6 +789,7 @@ function checkForkWarning(){
     if(nearFork&&!S.forkShown){
         S.forkShown=true;
         showTroll('NGÃ RẼ SẮP TỚI! Rẽ trái hoặc phải!', 3000);
+        playSfx(440, 0.3, 0.08);
     } else if(!nearFork) S.forkShown=false;
 }
 
@@ -816,6 +924,7 @@ function updateTrolls(dt){
             S.milestoneShown[a.km]=true;
             showAchievement(a.title, a.msg.replace('__',S.dist.toFixed(1)));
             doShake(3,.3);
+            playSfx(660, 0.2, 0.06);
         }
     });
 
@@ -844,6 +953,7 @@ function triggerRandomTroll(){
         showTroll('ĐIỀU KHIỂN ĐẢO NGƯỢC! ◀ = ▶ , ▶ = ◀', 2500);
         doShake(4,.5);
         vibrate(200);
+        playSfx(200, 0.3, 0.08);
     } else if(roll<0.55){
         const colors=[0x00cc00,0x0000cc,0xcccc00,0xff6600,0x9900cc,0x00cccc,0xff00ff];
         const c=colors[Math.floor(Math.random()*colors.length)];
@@ -854,6 +964,7 @@ function triggerRandomTroll(){
         showTroll('GAME OVER! ...À, chỉ là ảo giác', 1500);
         doShake(6,.3);
         vibrate(100);
+        playSfx(150, 0.5, 0.1);
     } else if(roll<0.75){
         const n=FAKE_NOTIFS[Math.floor(Math.random()*FAKE_NOTIFS.length)];
         if(fakeNotifText) fakeNotifText.innerHTML='<span class="notif-icon">'+n.icon+'</span>'+n.text;
@@ -867,10 +978,10 @@ function triggerRandomTroll(){
         const msg=S.speed>C.CAR_BASE_SPEED?'TURBO BOOST! (ảo)':'XE BỊ KẸT CÁT! (ảo)';
         showTroll(msg, 2000);
         doShake(3,.2);
+        playSfx(S.speed>C.CAR_BASE_SPEED?880:100, 0.3, 0.08);
     } else {
         scene.fog=new THREE.FogExp2(0x6699cc,0.02);
         showTroll('Mưa ở sa mạc?! ...À, ảo giác', 3000);
-        // FIX: clear previous fog timeout before setting new one
         if(fogTimeout) clearTimeout(fogTimeout);
         fogTimeout=setTimeout(()=>{
             scene.fog=new THREE.FogExp2(0xD2B48C, isLowDevice?0.010:0.005);
@@ -879,7 +990,6 @@ function triggerRandomTroll(){
     }
 }
 
-/* FIX: showTroll clears previous timeout to prevent leak */
 function showTroll(msg, duration){
     trollBox.textContent=msg;
     trollBox.className='t-box';
@@ -891,7 +1001,6 @@ function showTroll(msg, duration){
     }, duration);
 }
 
-/* FIX: showAchievement clears previous timeout to prevent leak */
 function showAchievement(title, msg){
     msKm.textContent=title;
     msMsg.textContent=msg;
@@ -913,11 +1022,13 @@ function startGame(){
     ctrlEl.style.display='block';
     S.phase='playing';
     S.dead=false;
+    S.paused=false;
     S.t0=Date.now();
     S.dist=0;S.speed=C.CAR_BASE_SPEED;S.offRoadT=0;S.onRoad=true;
     S.deathCount=0;S.controlsReversed=false;S.reverseTimer=0;
     S.carColorTimer=0;S.shakeTimer=0;S.milestoneShown={};
     S.forkShown=false;S.fakeNotifTimer=0;S.fakeDeathFlash=0;
+    S.bestDist=0;
     trollTimer=0;nextTrollAt=15;S.trollCooldown=0;
 
     const r=carGroup.rotation.y;
@@ -928,17 +1039,21 @@ function startGame(){
     );
     cam.lookAt(carGroup.position.x+Math.sin(r)*C.CAM_LOOK_AHEAD, 1.5, carGroup.position.z-Math.cos(r)*C.CAM_LOOK_AHEAD);
 
+    // Init audio on first user interaction
+    if(!audioCtx) initAudio();
+    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+
     resetInput();
     startLoop();
 }
 
-/* FIX: prevent double death with S.dead flag */
 function triggerDeath(){
     if(S.dead) return;
     S.dead=true;
     S.phase='dead';
     S.deathCount++;
     vibrate(300);
+    playSfx(100, 0.5, 0.12);
 
     let extra='';
     if(S.deathCount===1) extra=' (Lần đầu chết, rất bình thường)';
@@ -950,6 +1065,7 @@ function triggerDeath(){
     else if(S.deathCount>=50) extra=' (Bạn đã chết '+S.deathCount+' lần. Game tôn vinh sự kiên trì)';
 
     dstD.textContent='Bạn đã đi được '+S.dist.toFixed(2)+'km rồi, cố lên!'+extra;
+    if(bestD) bestD.textContent='Kỷ lục: '+S.bestDist.toFixed(2)+' km';
     deathScr.style.display='flex';
     hudEl.style.display='none';
     ctrlEl.style.display='none';
@@ -971,16 +1087,20 @@ function triggerEaster(){
 
 function restart(){
     stopLoop();
+    // Preserve bestDist across restarts
+    const prevBest = S.bestDist;
     S.phase='playing';
     S.dead=false;
+    S.paused=false;
     S.dist=0;S.speed=C.CAR_BASE_SPEED;S.offRoadT=0;S.onRoad=true;
     S.t0=Date.now();S.forkShown=false;
     S.controlsReversed=false;S.reverseTimer=0;
     S.carColorTimer=0;S.shakeTimer=0;S.milestoneShown={};
     S.fakeNotifTimer=0;S.fakeDeathFlash=0;
+    S.bestDist=prevBest;
     trollTimer=0;nextTrollAt=15;S.trollCooldown=0;
 
-    // FIX: clear all pending timeouts
+    // Clear all pending timeouts
     if(trollTimeout){clearTimeout(trollTimeout);trollTimeout=null;}
     if(achievementTimeout){clearTimeout(achievementTimeout);achievementTimeout=null;}
     if(fogTimeout){clearTimeout(fogTimeout);fogTimeout=null;}
@@ -994,17 +1114,18 @@ function restart(){
     obstaclePool.forEach(o=>{
         if(!o.userData.isObs)return;
         const side=Math.random()>.5?1:-1;
-        o.position.x=side*(Math.random()*C.ROAD_W/2-1);
+        o.position.x=side*(1+Math.random()*(C.ROAD_W/2-3));
     });
 
     cam.position.set(0, C.CAM_H, C.CAM_DIST);
     cam.lookAt(0, 1.5, 0);
 
-    deathScr.style.display='none';eastScr.style.display='none';
+    deathScr.style.display='none';eastScr.style.display='none';pauseScr.style.display='none';
     hudEl.style.display='block';ctrlEl.style.display='block';
     offVig.style.display='none';revInd.style.display='none';
     fakeNotif.style.display='none';trollPop.style.display='none';msBanner.style.display='none';
     resetInput();
+    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     startLoop();
 }
 
@@ -1014,8 +1135,25 @@ function resetInput(){
 }
 
 /* ── PAUSE/RESUME (Android) ── */
-window.pauseGame=function(){S.paused=true;clock.stop()};
-window.resumeGame=function(){S.paused=false;clock.start();startLoop()};
+window.pauseGame=function(){
+    if(S.phase==='playing'&&!S.paused){
+        S.paused=true;
+        pauseScr.style.display='flex';
+        hudEl.style.display='none';
+        ctrlEl.style.display='none';
+        if(audioCtx) audioCtx.suspend();
+    }
+};
+window.resumeGame=function(){
+    if(S.paused){
+        S.paused=false;
+        pauseScr.style.display='none';
+        hudEl.style.display='block';
+        ctrlEl.style.display='block';
+        clock.start();
+        if(audioCtx) audioCtx.resume();
+    }
+};
 
 /* ── BOOT ── */
 init();

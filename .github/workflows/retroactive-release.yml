@@ -120,7 +120,6 @@ jobs:
 
       - name: Copy build tools from main to tag checkout
         run: |
-          # Copy gradlew and wrapper files from main branch if missing
           if [ ! -f "tag_checkout/gradlew" ]; then
             cp main_checkout/gradlew tag_checkout/
             cp main_checkout/gradlew.bat tag_checkout/ 2>/dev/null || true
@@ -134,13 +133,27 @@ jobs:
           fi
           chmod +x tag_checkout/gradlew
 
-      - name: Fix build issues for old tags
+      - name: Patch build for CI compatibility
         run: |
           cd tag_checkout
           # Remove allprojects block if it exists (conflicts with settings.gradle FAIL_ON_PROJECT_REPOS)
           sed -i '/^allprojects {/,/^}/d' build.gradle
-          # Fix invalid proguard -keepassets directive
+          # Fix invalid proguard -keepassets directive (old tags)
           sed -i '/^-keepassets/d' app/proguard-rules.pro
+          # Remove overly aggressive proguard rules that cause duplicate class issues (old tags)
+          sed -i '/^-keep class \* extends java.lang.Object/d' app/proguard-rules.pro
+          sed -i '/^-keepclassmembers class \* {/,/^}/d' app/proguard-rules.pro
+          # Add Kotlin stdlib resolution if missing (old tags before v0.5)
+          if ! grep -q "kotlin-stdlib" app/build.gradle; then
+            sed -i '/^dependencies {/a\
+          configurations.all {\
+              resolutionStrategy {\
+                  force '"'"'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'"'"'\
+                  force '"'"'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'"'"'\
+                  force '"'"'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'"'"'\
+              }\
+          }' app/build.gradle
+          fi
           # Create local.properties
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
@@ -169,7 +182,6 @@ jobs:
           fi
           echo "Found APK: $APK_PATH"
 
-          # Check if APK is already properly signed
           if ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify "$APK_PATH" 2>/dev/null; then
             echo "APK is already signed, skipping re-signing"
             SIGNED_PATH="app/build/outputs/apk/release/SaMacAoGiac-signed.apk"
@@ -189,7 +201,6 @@ jobs:
               "$ALIGNED_PATH"
           fi
 
-          # Verify
           ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify --print-certs "$SIGNED_PATH"
           echo "APK signed successfully: $SIGNED_PATH"
 

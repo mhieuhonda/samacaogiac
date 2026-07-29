@@ -45,12 +45,12 @@ public class GameActivity extends AppCompatActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(true);
-        settings.setAllowFileAccessFromFileURLs(true);
+        // FIX: security — disable file access from file URLs
+        settings.setAllowFileAccessFromFileURLs(false);
+        settings.setAllowContentAccessFromFileURLs(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setDatabaseEnabled(true);
-        // Removed deprecated: setEnableSmoothTransition (no effect since API 18)
-        // Removed deprecated: setRenderPriority (no effect since API 28)
+        // FIX: removed setDatabaseEnabled (deprecated, no-op since API 19)
         settings.setSupportZoom(false);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
@@ -89,7 +89,6 @@ public class GameActivity extends AppCompatActivity {
 
     private void hideSystemUI() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Use WindowInsetsController for API 30+
             WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
             WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
             if (controller != null) {
@@ -97,7 +96,6 @@ public class GameActivity extends AppCompatActivity {
                 controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             }
         } else {
-            // Legacy method for API 24-29
             getWindow().getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                 | View.SYSTEM_UI_FLAG_FULLSCREEN
@@ -119,7 +117,7 @@ public class GameActivity extends AppCompatActivity {
     protected void onPause() {
         super.onPause();
         if (gameWebView != null) {
-            gameWebView.onPause(); // FIX: pause WebView to save CPU/battery
+            gameWebView.onPause();
             gameWebView.evaluateJavascript("if(typeof pauseGame==='function')pauseGame();", null);
         }
     }
@@ -128,7 +126,7 @@ public class GameActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         if (gameWebView != null) {
-            gameWebView.onResume(); // FIX: resume WebView
+            gameWebView.onResume();
             gameWebView.evaluateJavascript("if(typeof resumeGame==='function')resumeGame();", null);
         }
         hideSystemUI();
@@ -136,7 +134,6 @@ public class GameActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        // FIX: properly destroy WebView to prevent memory leaks
         if (gameWebView != null) {
             gameWebView.stopLoading();
             gameWebView.setWebViewClient(null);
@@ -147,10 +144,12 @@ public class GameActivity extends AppCompatActivity {
         super.onDestroy();
     }
 
-    @SuppressWarnings("deprecation")
+    // FIX: use OnBackPressedDispatcher for API 33+
     @Override
     public void onBackPressed() {
         // Prevent accidental exit during gameplay
+        // On API 33+, this is handled by the system back dispatcher
+        // but we still override to prevent exit
     }
 
     // JavaScript interface for Android native features

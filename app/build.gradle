@@ -24,8 +24,8 @@ android {
         applicationId "com.samacaogiac.game"
         minSdk 24
         targetSdk 34
-        versionCode 4
-        versionName "0.4"
+        versionCode 5
+        versionName "0.5"
     }
 
     signingConfigs {
@@ -62,9 +62,16 @@ android {
     }
 }
 
+configurations.all {
+    resolutionStrategy {
+        force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+    }
+}
+
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.webkit:webkit:1.9.0'
-    // FIX: removed constraintlayout (not used in layouts)
     implementation 'androidx.core:core:1.12.0'
 }

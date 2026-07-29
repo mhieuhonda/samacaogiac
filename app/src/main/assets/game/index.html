@@ -16,6 +16,9 @@
         #speedHud{top:10px;left:50%;transform:translateX(-50%);font-size:16px;padding:6px 16px;letter-spacing:1px}
         #distHud{top:10px;right:14px;font-size:14px;padding:5px 12px;color:#fbbf24}
         #timerHud{top:10px;left:14px;font-size:12px;padding:4px 10px;color:#94a3b8}
+        /* ── PAUSE BUTTON ── */
+        #pauseBtn{position:absolute;top:10px;right:14px;top:50px;right:14px;z-index:15;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.4);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border:2px solid rgba(255,255,255,.2);display:none;align-items:center;justify-content:center;color:rgba(255,255,255,.7);font-size:16px;cursor:pointer;pointer-events:auto}
+        #pauseBtn:active{background:rgba(255,255,255,.2);transform:scale(.9)}
         /* ── OFF-ROAD VIGNETTE ── */
         #offroadVignette{position:absolute;top:0;left:0;width:100%;height:100%;z-index:8;pointer-events:none;display:none;background:radial-gradient(ellipse at center,transparent 40%,rgba(220,38,38,.35) 100%);animation:vigPulse .8s ease-in-out infinite}
         @keyframes vigPulse{0%,100%{opacity:.7}50%{opacity:1}}
@@ -38,13 +41,21 @@
         /* ── DEATH ── */
         #deathScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.88);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
         .d-t{color:#ef4444;font-size:28px;font-weight:800;letter-spacing:2px;margin-bottom:10px}
-        .d-d{color:#fbbf24;font-size:18px;margin-bottom:24px;text-align:center;padding:0 20px;line-height:1.5}
+        .d-d{color:#fbbf24;font-size:18px;margin-bottom:8px;text-align:center;padding:0 20px;line-height:1.5}
+        .d-best{color:#94a3b8;font-size:13px;margin-bottom:20px}
         .d-b{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;font-size:16px;font-weight:700;padding:11px 40px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer}
         .d-b:active{transform:scale(.94)}
         /* ── EASTER ── */
         #easterScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:300;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
         .e-m{color:#fbbf24;font-size:22px;font-weight:700;margin-bottom:22px;text-align:center;line-height:1.6;padding:0 24px}
         .e-b{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:16px;font-weight:700;padding:11px 40px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer}
+        /* ── PAUSE ── */
+        #pauseScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:250;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.85);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+        .p-title{color:#fbbf24;font-size:24px;font-weight:800;letter-spacing:3px;margin-bottom:30px}
+        .p-btn{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:16px;font-weight:700;padding:12px 40px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer;margin-bottom:12px;min-width:200px}
+        .p-btn:active{transform:scale(.94)}
+        .p-btn2{background:rgba(255,255,255,.1);color:#e2e8f0;font-size:14px;font-weight:600;padding:10px 40px;border-radius:24px;border:1px solid rgba(255,255,255,.2);cursor:pointer;min-width:200px}
+        .p-btn2:active{transform:scale(.94)}
         /* ── TROLL POPUPS ── */
         #trollPopup{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);z-index:50;display:none;pointer-events:none;text-align:center;animation:trollIn .3s ease-out}
         @keyframes trollIn{0%{opacity:0;transform:translateX(-50%) scale(.7)}100%{opacity:1;transform:translateX(-50%) scale(1)}}
@@ -80,6 +91,7 @@
         <div class="hud-box" id="distHud">0.00 km</div>
         <div class="hud-box" id="timerHud">0:00</div>
     </div>
+    <div id="pauseBtn">⏸</div>
     <div id="controls">
         <div class="cb" id="bL">◀</div>
         <div class="cb" id="bR">▶</div>
@@ -103,12 +115,19 @@
     <div id="deathScreen" role="dialog" aria-label="Game Over">
         <div class="d-t">XE ĐÃ HỎNG!</div>
         <div class="d-d" id="deathDist">Bạn đã đi được 0.00km rồi, cố lên!</div>
+        <div class="d-best" id="deathBest">Kỷ lục: 0.00 km</div>
         <button class="d-b" id="replayBtn" aria-label="Chơi lại">CHƠI LẠI</button>
     </div>
     <!-- Easter Egg -->
     <div id="easterScreen" role="dialog" aria-label="Easter Egg">
         <div class="e-m">🎉 Chúc mừng bạn đã lãng phí 1 tiếng của cuộc đời</div>
         <button class="e-b" id="easterBtn" aria-label="Chơi lại">CHƠI LẠI</button>
+    </div>
+    <!-- Pause -->
+    <div id="pauseScreen" role="dialog" aria-label="Tạm dừng">
+        <div class="p-title">TẠM DỪNG</div>
+        <button class="p-btn" id="resumeBtn" aria-label="Tiếp tục">TIẾP TỤC</button>
+        <button class="p-btn2" id="quitBtn" aria-label="Thoát">THOÁT</button>
     </div>
 
     <script src="three.min.js"></script>

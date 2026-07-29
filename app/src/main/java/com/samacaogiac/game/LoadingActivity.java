@@ -47,10 +47,18 @@ public class LoadingActivity extends AppCompatActivity {
 
         // Set loading background image from assets
         ImageView loadingBg = findViewById(R.id.loadingBackground);
-        // FIX: use try-with-resources to properly close InputStream
         try (InputStream is = getAssets().open("manhinhload.png")) {
-            Bitmap bitmap = BitmapFactory.decodeStream(is);
-            loadingBg.setImageBitmap(bitmap);
+            // FIX: downsample large bitmap to prevent OOM on low-end devices
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inJustDecodeBounds = true;
+            BitmapFactory.decodeStream(is, null, opts);
+            opts.inSampleSize = calculateInSampleSize(opts, 720, 1280);
+            opts.inJustDecodeBounds = false;
+            // Re-open stream after bounds check
+            try (InputStream is2 = getAssets().open("manhinhload.png")) {
+                Bitmap bitmap = BitmapFactory.decodeStream(is2, null, opts);
+                loadingBg.setImageBitmap(bitmap);
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -60,6 +68,21 @@ public class LoadingActivity extends AppCompatActivity {
         handler = new Handler(Looper.getMainLooper());
 
         startLoading();
+    }
+
+    // FIX: calculate bitmap sampling to save memory
+    private static int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
+        final int height = options.outHeight;
+        final int width = options.outWidth;
+        int inSampleSize = 1;
+        if (height > reqHeight || width > reqWidth) {
+            final int halfHeight = height / 2;
+            final int halfWidth = width / 2;
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+        return inSampleSize;
     }
 
     private void startLoading() {

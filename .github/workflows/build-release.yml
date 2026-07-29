@@ -58,12 +58,15 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
 
-      - name: Fix build issues for compatibility
+      - name: Patch build for CI compatibility
         run: |
           # Remove allprojects block if it exists (conflicts with settings.gradle FAIL_ON_PROJECT_REPOS)
           sed -i '/^allprojects {/,/^}/d' build.gradle
-          # Fix invalid proguard -keepassets directive
+          # Fix invalid proguard -keepassets directive (old tags)
           sed -i '/^-keepassets/d' app/proguard-rules.pro
+          # Remove overly aggressive proguard rules that cause duplicate class issues (old tags)
+          sed -i '/^-keep class \* extends java.lang.Object/d' app/proguard-rules.pro
+          sed -i '/^-keepclassmembers class \* {/,/^}/d' app/proguard-rules.pro
           # Ensure gradle-wrapper.jar is executable
           chmod +x gradlew
 
@@ -78,7 +81,6 @@ jobs:
 
       - name: Sign APK with apksigner (fallback if Gradle signing fails)
         run: |
-          # Find the APK (could be signed or unsigned depending on Gradle config)
           APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
           if [ -z "$APK_PATH" ]; then
             echo "ERROR: No APK found!"
@@ -93,11 +95,9 @@ jobs:
             cp "$APK_PATH" "$SIGNED_PATH"
           else
             echo "APK is not signed, signing with apksigner..."
-            # Zipalign
             ALIGNED_PATH="app/build/outputs/apk/release/aligned.apk"
             ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f 4 "$APK_PATH" "$ALIGNED_PATH" || cp "$APK_PATH" "$ALIGNED_PATH"
 
-            # Sign with apksigner
             SIGNED_PATH="app/build/outputs/apk/release/SaMacAoGiac-signed.apk"
             ${ANDROID_HOME}/build-tools/34.0.0/apksigner sign \
               --ks app/release.keystore \

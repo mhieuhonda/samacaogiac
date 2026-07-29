@@ -1,5 +1,3 @@
-# Add project specific ProGuard rules here.
-
 # ── WebView JavaScript Bridge ──
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
@@ -15,8 +13,14 @@
 -dontwarn android.webkit.WebView
 -dontwarn android.webkit.WebSettings
 
-# ── Three.js assets ──
--keep class * extends java.lang.Object { *; }
--keepclassmembers class * {
-    *** *(...);
-}
+# ── Three.js assets (loaded via WebView, not Java) ──
+-keep class com.samacaogiac.game.LoadingActivity { *; }
+
+# ── General optimizations ──
+-optimizationpasses 3
+-dontusemixedcaseclassnames
+-dontskipnonpubliclibraryclasses
+-verbose
+
+# ── Suppress warnings for Kotlin stdlib ──
+-dontwarn org.jetbrains.kotlin.**
