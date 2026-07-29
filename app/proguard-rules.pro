@@ -5,5 +5,9 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 
-# Keep Three.js and game code
--keepassets assets/game/**
+# Keep WebView class for JavaScript bridge
+-keep class android.webkit.WebView { *; }
+-keep class * extends android.webkit.WebViewClient { *; }
+
+# Keep game activity and view classes
+-keep class com.samacaogiac.game.** { *; }

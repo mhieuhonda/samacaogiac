@@ -47,6 +47,8 @@ jobs:
         run: |
           # Remove allprojects block if it exists (conflicts with settings.gradle FAIL_ON_PROJECT_REPOS)
           sed -i '/^allprojects {/,/^}/d' build.gradle
+          # Fix invalid proguard -keepassets directive
+          sed -i '/^-keepassets/d' app/proguard-rules.pro
 
       - name: Build Release APK
         run: |
