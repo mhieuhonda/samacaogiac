@@ -130,8 +130,16 @@ class MusicPickerActivity : AppCompatActivity() {
                     )
                 }
             }
+            // v0.7 FIX: do NOT wrap ACTION_OPEN_DOCUMENT in Intent.createChooser.
+            // The Android docs explicitly warn against this: ACTION_OPEN_DOCUMENT
+            // already shows the system file picker, and wrapping it in a chooser
+            // either shows a redundant chooser dialog (annoying) or, on some
+            // OEM ROMs (Xiaomi / Huawei), surfaces a broken "no app can handle"
+            // error and bounces the user back to the game without ever opening
+            // the picker — which looked exactly like the "play button freezes"
+            // bug the user reported.
             @Suppress("DEPRECATION")
-            startActivityForResult(Intent.createChooser(intent, "Chọn bài hát"), REQ_OPEN_DOC)
+            startActivityForResult(intent, REQ_OPEN_DOC)
         } catch (e: Exception) {
             Log.e(TAG, "No file picker available", e)
             decline()

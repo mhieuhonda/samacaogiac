@@ -122,6 +122,17 @@ public class MusicPlayerService extends Service
                     sPlaying = true;
                     sTrackName = name != null ? name : "";
                     notifyNative(true);
+                } else {
+                    // v0.7 FIX: audio focus denied (e.g., another app is
+                    // in a call or playing media). Previously the service
+                    // stayed alive but never started playback — leaving a
+                    // dangling foreground notification and confusing the
+                    // JS-side music poller (isMusicPlaying() returned
+                    // false forever, so the user thought the music button
+                    // was broken). Stop cleanly instead.
+                    Log.w(TAG, "Audio focus denied — stopping service");
+                    stop();
+                    stopSelf();
                 }
             });
             mp.setOnErrorListener((m, what, extra) -> {
@@ -137,18 +148,29 @@ public class MusicPlayerService extends Service
     }
 
     private void pause() {
-        if (mp != null && mp.isPlaying()) {
-            mp.pause();
-            sPlaying = false;
-            notifyNative(false);
+        // v0.7: try/catch — isPlaying() throws IllegalStateException if
+        // the MediaPlayer is in an error or uninitialized state (which
+        // can happen if prepareAsync hasn't completed yet).
+        if (mp != null) {
+            try {
+                if (mp.isPlaying()) {
+                    mp.pause();
+                    sPlaying = false;
+                    notifyNative(false);
+                }
+            } catch (IllegalStateException ignored) {}
         }
     }
 
     private void resume() {
-        if (mp != null && !mp.isPlaying()) {
-            mp.start();
-            sPlaying = true;
-            notifyNative(true);
+        if (mp != null) {
+            try {
+                if (!mp.isPlaying()) {
+                    mp.start();
+                    sPlaying = true;
+                    notifyNative(true);
+                }
+            } catch (IllegalStateException ignored) {}
         }
     }
 
@@ -163,6 +185,7 @@ public class MusicPlayerService extends Service
     private void stopInternal() {
         if (mp != null) {
             try {
+                // v0.7: try/catch around isPlaying() — throws if not prepared.
                 if (mp.isPlaying()) mp.stop();
                 mp.reset();
                 mp.release();

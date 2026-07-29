@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name to build (e.g. v0.6)'
+        description: 'Tag name to build (e.g. v0.7)'
         required: true
-        default: 'v0.6'
+        default: 'v0.7'
 
 permissions:
   contents: write

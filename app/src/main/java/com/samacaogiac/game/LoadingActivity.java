@@ -7,6 +7,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -57,10 +58,19 @@ public class LoadingActivity extends AppCompatActivity {
             // Re-open stream after bounds check
             try (InputStream is2 = getAssets().open("manhinhload.png")) {
                 Bitmap bitmap = BitmapFactory.decodeStream(is2, null, opts);
-                loadingBg.setImageBitmap(bitmap);
+                // v0.7 FIX: decodeStream can return null on OOM / corrupt
+                // PNG. setImageBitmap(null) is technically safe but leaves
+                // a transparent ImageView, so we only set the bitmap if it
+                // actually decoded. The fall-through background color
+                // (@color/loading_bg) will show otherwise.
+                if (bitmap != null) {
+                    loadingBg.setImageBitmap(bitmap);
+                } else {
+                    Log.w("LoadingActivity", "manhinhload.png decoded to null");
+                }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.w("LoadingActivity", "Could not load manhinhload.png", e);
         }
 
         progressBar = findViewById(R.id.loadingProgressBar);

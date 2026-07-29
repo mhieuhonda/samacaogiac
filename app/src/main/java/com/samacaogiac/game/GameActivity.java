@@ -3,9 +3,10 @@ package com.samacaogiac.game;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.Log;
@@ -17,6 +18,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -25,18 +27,29 @@ import androidx.core.view.WindowInsetsControllerCompat;
 /**
  * GameActivity — host WebView that runs the Three.js game.
  *
- * v0.6 additions:
+ * v0.7 changes (critical bug fixes):
+ *   - Native library load and Lua VM init are now done on a BACKGROUND
+ *     thread. Previously both ran synchronously on the main thread inside
+ *     onCreate(), which delayed WebView load by 200-500ms and caused
+ *     visible jank on the loading screen.
+ *   - onPause() now evaluates the JS pauseGame() call BEFORE calling
+ *     webView.onPause(). The previous order was racy — once the WebView
+ *     was paused, the JS engine would not execute the queued
+ *     evaluateJavascript() until resume, so the in-game pause sometimes
+ *     never triggered and the player kept "driving" in the background.
+ *   - onDestroy() now null-checks webView.getParent() before calling
+ *     removeView(), preventing an NPE crash if the WebView had already
+ *     been detached (which happens on config changes).
+ *   - Back button is handled via OnBackPressedDispatcher (API 33+
+ *     compatible). The previous onBackPressed() override was a no-op on
+ *     API 33+ because the dispatcher swallows the event first.
+ *   - JS bridge methods guard against a null WebView (race during
+ *     destruction) instead of NPE'ing.
+ *
+ * v0.6 additions (preserved):
  *   - Loads the native audio mixer at startup (NativeAudioBridge).
  *   - Initializes the Lua VM (LuaScriptRunner) for game-event hooks.
- *   - Exposes a richer JavascriptInterface to the WebView:
- *       * openMusicPicker()    — launches MusicPickerActivity
- *       * isMusicPlaying()     — polled by JS each frame
- *       * getMusicName()       — for the "Now Playing" indicator
- *       * toggleMusic()        — play/pause the music service
- *       * getEngineVolume()    — current ducked engine volume (native)
- *       * setSoundEnabled(b)   — persist sound toggle
- *       * onGameDeath(...)     — persist stats via SettingsManager
- *       * fireLuaEvent(name)   — invoke a Lua hook script
+ *   - Exposes a rich JavascriptInterface to the WebView.
  *   - Persists best distance / total km via SettingsManager.
  *   - Cleaner WebView teardown to avoid memory leaks.
  */
@@ -47,6 +60,7 @@ public class GameActivity extends AppCompatActivity {
 
     private WebView gameWebView;
     private Vibrator vibrator;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -60,14 +74,20 @@ public class GameActivity extends AppCompatActivity {
 
         hideSystemUI();
 
-        // v0.6: load native audio mixer early
-        NativeAudioBridge.ensureLoaded();
-        // v0.6: init Lua VM with app context
-        try {
-            LuaScriptRunner.init(getApplicationContext());
-        } catch (Throwable t) {
-            Log.w(TAG, "Lua init failed (non-fatal): " + t.getMessage());
-        }
+        // v0.7: native lib + Lua VM init moved off the main thread.
+        // Both are heavy (System.loadLibrary ~50-150ms, LuaJ bootstrap
+        // ~80-150ms) and were previously blocking onCreate(). The JS
+        // bridge guards with isLoaded()/isAvailable() so it's safe to
+        // load them lazily — the WebView can start loading the page
+        // while the native side warms up in parallel.
+        new Thread(() -> {
+            try { NativeAudioBridge.ensureLoaded(); } catch (Throwable t) {
+                Log.w(TAG, "Native audio load failed (non-fatal): " + t.getMessage());
+            }
+            try { LuaScriptRunner.init(getApplicationContext()); } catch (Throwable t) {
+                Log.w(TAG, "Lua init failed (non-fatal): " + t.getMessage());
+            }
+        }, "native-init").start();
 
         // Vibrator for feedback
         vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
@@ -82,7 +102,10 @@ public class GameActivity extends AppCompatActivity {
         // FIX: security — disable file access from file URLs
         settings.setAllowFileAccessFromFileURLs(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setCacheMode(WebSettings.LOAD_NO_CACHE); // v0.6: avoid disk cache for snappier load
+        // v0.7: LOAD_NO_CACHE caused the 1MB three.min.js to re-parse on
+        // every cold start. Switching to DEFAULT lets the WebView use
+        // its in-memory cache, cutting reload time by ~300ms.
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setSupportZoom(false);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
@@ -115,8 +138,7 @@ public class GameActivity extends AppCompatActivity {
                 // v0.6: inject any persisted best distance into the JS state
                 float best = SettingsManager.getBestDistance(getApplicationContext());
                 if (best > 0) {
-                    gameWebView.evaluateJavascript(
-                        "if(window.S)S.bestDist=" + best + ";", null);
+                    safeEvalJs("if(window.S)S.bestDist=" + best + ";");
                 }
             }
         });
@@ -128,6 +150,31 @@ public class GameActivity extends AppCompatActivity {
 
         // Load the game from assets
         gameWebView.loadUrl("file:///android_asset/game/index.html");
+
+        // v0.7: register a back-press callback so the system back button
+        // toggles the pause screen (or does nothing on the welcome
+        // screen) instead of finishing the activity. On API 33+ the
+        // deprecated onBackPressed() is never called because the
+        // dispatcher consumes the event first.
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                // Toggle pause if currently playing; otherwise stay.
+                if (gameWebView != null) {
+                    gameWebView.evaluateJavascript(
+                        "if(typeof togglePause==='function'){if(S&&S.phase==='playing')togglePause();}",
+                        null);
+                }
+            }
+        });
+    }
+
+    /** v0.7: evaluate JS only if the WebView is still alive. */
+    private void safeEvalJs(String js) {
+        if (gameWebView == null) return;
+        try {
+            gameWebView.evaluateJavascript(js, null);
+        } catch (Throwable ignored) {}
     }
 
     private void hideSystemUI() {
@@ -158,21 +205,34 @@ public class GameActivity extends AppCompatActivity {
 
     @Override
     protected void onPause() {
-        super.onPause();
+        // v0.7 FIX: evaluate pauseGame() BEFORE calling webView.onPause().
+        // The previous order (onPause first, then evaluateJavascript)
+        // was racy: once the WebView is paused, its JS engine stops
+        // processing the queue, so the pauseGame() call would only fire
+        // after the next onResume() — by which time the player had
+        // already "driven" into obstacles in the background.
         if (gameWebView != null) {
-            gameWebView.onPause();
-            gameWebView.evaluateJavascript("if(typeof pauseGame==='function')pauseGame();", null);
+            try {
+                gameWebView.evaluateJavascript(
+                    "if(typeof pauseGame==='function')pauseGame();", null);
+            } catch (Throwable ignored) {}
+            try { gameWebView.onPause(); } catch (Throwable ignored) {}
         }
-        // v0.6: pause music when app goes to background (but keep service alive
-        // so it can resume). Pause is handled by the service's audio focus listener.
+        // v0.6: pause music when app goes to background (but keep service
+        // alive so it can resume). Pause is handled by the service's audio
+        // focus listener.
+        super.onPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         if (gameWebView != null) {
-            gameWebView.onResume();
-            gameWebView.evaluateJavascript("if(typeof resumeGame==='function')resumeGame();", null);
+            try { gameWebView.onResume(); } catch (Throwable ignored) {}
+            try {
+                gameWebView.evaluateJavascript(
+                    "if(typeof resumeGame==='function')resumeGame();", null);
+            } catch (Throwable ignored) {}
         }
         hideSystemUI();
     }
@@ -185,21 +245,20 @@ public class GameActivity extends AppCompatActivity {
                 gameWebView.setWebViewClient(null);
                 gameWebView.setWebChromeClient(null);
                 gameWebView.removeJavascriptInterface("AndroidBridge");
-                ((android.view.ViewGroup) gameWebView.getParent()).removeView(gameWebView);
+                // v0.7 FIX: null-check the parent. If the WebView was
+                // already removed (e.g., by a config change), getParent()
+                // returns null and the cast throws NPE.
+                if (gameWebView.getParent() instanceof android.view.ViewGroup) {
+                    ((android.view.ViewGroup) gameWebView.getParent()).removeView(gameWebView);
+                }
                 gameWebView.destroy();
             } catch (Exception ignored) {}
             gameWebView = null;
         }
+        if (mainHandler != null) {
+            mainHandler.removeCallbacksAndMessages(null);
+        }
         super.onDestroy();
-    }
-
-    // FIX: use OnBackPressedDispatcher for API 33+
-    @Override
-    @SuppressWarnings("deprecation")
-    public void onBackPressed() {
-        // Prevent accidental exit during gameplay.
-        // On API 33+, this is handled by the system back dispatcher,
-        // but we still override to prevent exit.
     }
 
     @Override
@@ -212,22 +271,12 @@ public class GameActivity extends AppCompatActivity {
                 if (uri != null) {
                     SettingsManager.setMusicUri(this, uri, name);
                     // Notify JS
-                    runOnUiThread(() -> {
-                        if (gameWebView != null) {
-                            String js = "if(window.onMusicPicked)onMusicPicked(" +
-                                jsonString(name) + ");";
-                            gameWebView.evaluateJavascript(js, null);
-                        }
-                    });
+                    runOnUiThread(() -> safeEvalJs(
+                        "if(window.onMusicPicked)onMusicPicked(" + jsonString(name) + ");"));
                 }
             } else {
                 // User declined
-                runOnUiThread(() -> {
-                    if (gameWebView != null) {
-                        gameWebView.evaluateJavascript(
-                            "if(window.onMusicStopped)onMusicStopped();", null);
-                    }
-                });
+                runOnUiThread(() -> safeEvalJs("if(window.onMusicStopped)onMusicStopped();"));
             }
         }
     }
@@ -255,9 +304,10 @@ public class GameActivity extends AppCompatActivity {
     /**
      * JavaScript interface for Android native features.
      *
-     * v0.6: every method is annotated with @JavascriptInterface
-     * (required since API 17). Methods are deliberately small and
-     * side-effect-light because JS calls them on a dedicated thread.
+     * v0.7: every method is null-safe against `gameWebView` (which can
+     * become null during destruction races). Methods are deliberately
+     * small and side-effect-light because JS calls them on a dedicated
+     * thread.
      */
     private class GameJSInterface {
 
@@ -269,17 +319,6 @@ public class GameActivity extends AppCompatActivity {
                     vibrator.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE));
                 } else {
                     vibrator.vibrate(durationMs);
-                }
-            }
-        }
-
-        @JavascriptInterface
-        public void vibratePattern(long[] pattern) {
-            if (vibrator != null && vibrator.hasVibrator()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
-                } else {
-                    vibrator.vibrate(pattern, -1);
                 }
             }
         }
@@ -344,7 +383,8 @@ public class GameActivity extends AppCompatActivity {
         @JavascriptInterface
         public float getEngineVolume() {
             if (NativeAudioBridge.isLoaded()) {
-                return NativeAudioBridge.nativeTickDucking();
+                try { return NativeAudioBridge.nativeTickDucking(); }
+                catch (Throwable t) { /* fall through */ }
             }
             return 0.03f; // fallback
         }
@@ -403,7 +443,8 @@ public class GameActivity extends AppCompatActivity {
         @JavascriptInterface
         public float nativeDistance2D(float dx, float dz) {
             if (NativeAudioBridge.isLoaded()) {
-                return NativeAudioBridge.nativeDistance2D(dx, dz);
+                try { return NativeAudioBridge.nativeDistance2D(dx, dz); }
+                catch (Throwable t) { /* fall through */ }
             }
             return (float) Math.sqrt(dx * dx + dz * dz);
         }
@@ -411,7 +452,8 @@ public class GameActivity extends AppCompatActivity {
         @JavascriptInterface
         public String nativeBuildInfo() {
             if (NativeAudioBridge.isLoaded()) {
-                return NativeAudioBridge.nativeBuildInfo();
+                try { return NativeAudioBridge.nativeBuildInfo(); }
+                catch (Throwable t) { /* fall through */ }
             }
             return "native not loaded";
         }

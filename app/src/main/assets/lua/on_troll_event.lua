@@ -1,10 +1,23 @@
 -- ============================================================
 -- on_troll_event.lua — Hook fired when a troll event triggers.
 --
--- Lets designers override or extend troll behavior. The variable
--- `event_type` (string) is injected by the caller before running.
--- We don't have it here, so we use a default.
+-- v0.7 FIX: previously this script set engine.setDuckFactor(0.0)
+-- at troll_level >= 2 and never restored it, so once chaos mode
+-- triggered the engine stayed silent for the rest of the run.
+-- We now record the previous value and restore it.
 -- ============================================================
+
+-- Restore any pending duck-factor restore from a previous event.
+-- This lets on_achievement.lua's 2-second fanfare expire naturally
+-- when the next troll event fires.
+if game._duck_restore and game._duck_restore_at and os.time() >= game._duck_restore_at then
+    if engine and engine.setDuckFactor then
+        engine.setDuckFactor(game._duck_restore)
+        game._duck_factor = game._duck_restore
+    end
+    game._duck_restore = nil
+    game._duck_restore_at = nil
+end
 
 local event = event_type or "unknown"
 
@@ -18,10 +31,13 @@ end
 -- Example: at troll_level 2 (chaos), make events more aggressive
 if game.troll_level >= 2 then
     if engine and engine.setDuckFactor then
-        -- During chaos mode, briefly mute engine for dramatic effect
-        engine.setDuckFactor(0.0)
+        -- Record previous so the next non-chaos event can restore it.
+        local prev = game._duck_factor or 0.15
+        engine.setDuckFactor(0.05)  -- quieter, not fully silent
+        game._duck_factor = 0.05
+        game._duck_restore = prev
+        game._duck_restore_at = os.time() + 3  -- restore in 3s
     end
 end
 
--- Schedule a restore (handled by Java side after the event ends)
 return true

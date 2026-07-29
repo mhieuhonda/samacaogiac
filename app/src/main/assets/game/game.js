@@ -66,6 +66,8 @@ const C = {
     MUSIC_POLL_FRAMES: 6,
     // MUSIC: engine base volume (matches native mixer default)
     ENGINE_BASE_VOL: 0.03,
+    // v0.7: how often to push game state to Lua VM (every N frames)
+    LUA_UPDATE_FRAMES: 30,
 };
 
 /* ── STATE ── */
@@ -129,6 +131,14 @@ const S = {
 
 /* ── THREE ── */
 let scene, cam, renderer, clock, loopRunning = false;
+// v0.7 FIX: loop token prevents duplicate gameLoop chains.
+//   Previously, stopLoop()+startLoop() (called by restart() and quitBtn)
+//   left the OLD rAF callback alive. When it fired, loopRunning was true
+//   again, so it scheduled ANOTHER callback. Result: 2 chains, then 4,
+//   then 8... exponential explosion → freeze after a few restarts.
+//   The token invalidates stale callbacks so they no-op.
+let loopToken = 0;
+let initFailed = false;   // v0.7: set if WebGL/Three init throws
 let carGroup, carBodyMesh, wheels = [];
 let segData = [];
 let decoPool = [];
@@ -311,8 +321,23 @@ onBtn('bBoost',v=>{inp.boost=v});
 function addClick(id, fn){
     const el=$(id);
     if(!el) return;
-    el.addEventListener('click', e=>{e.preventDefault();fn()});
-    el.addEventListener('touchstart', e=>{e.preventDefault();e.stopPropagation();fn()},{passive:false});
+    // v0.7 FIX: previous code added BOTH 'click' and 'touchstart' listeners.
+    // On most Android WebViews both fire per tap → fn() runs twice.
+    // For playBtn this was safe (guard), but for musicYes/musicNo it caused
+    // double openMusicPicker() / double startGameAfterMusic() calls.
+    // We now use a per-element "last touch time" flag: if a touchstart was
+    // handled within the last 600ms, the subsequent click is suppressed.
+    let lastTouch = 0;
+    el.addEventListener('touchstart', e=>{
+        e.preventDefault(); e.stopPropagation();
+        lastTouch = Date.now();
+        fn();
+    }, {passive:false});
+    el.addEventListener('click', e=>{
+        e.preventDefault();
+        if(Date.now() - lastTouch < 600) return; // already handled by touchstart
+        fn();
+    });
 }
 addClick('playBtn', startGame);
 addClick('replayBtn', restart);
@@ -1108,16 +1133,23 @@ function updateDust(dt){
 /* ───────────────────────────────────────────
    GAME LOOP
    ─────────────────────────────────────────── */
-function gameLoop(now){
-    if(!loopRunning) return;
-    requestAnimationFrame(gameLoop);
+// v0.7 FIX: pass the token through. A stale callback (scheduled before
+// stopLoop() incremented loopToken) sees token mismatch and no-ops,
+// preventing the exponential-callback explosion that froze the game.
+function gameLoop(now, token){
+    if(!loopRunning || token !== loopToken) return;
+    requestAnimationFrame(t => gameLoop(t, token));
 
-    // v0.6: FPS counter
+    // v0.7 FIX: guard against dt=0 / Infinity in FPS calc
     S.fpsFrames++;
-    S.fpsAccum += 1000 / (now - (gameLoop._lastNow || now));
+    if(gameLoop._lastNow && now > gameLoop._lastNow){
+        const inst = 1000 / (now - gameLoop._lastNow);
+        if(isFinite(inst)) S.fpsAccum += inst;
+    }
     gameLoop._lastNow = now;
     if(S.fpsFrames >= 30){
-        S.fps = Math.round(S.fpsAccum / S.fpsFrames);
+        S.fps = S.fpsFrames > 0 ? Math.round(S.fpsAccum / S.fpsFrames) : 60;
+        if(!isFinite(S.fps) || S.fps < 0) S.fps = 60;
         S.fpsAccum = 0; S.fpsFrames = 0;
         // v0.6: auto-quality — drop shadow if FPS too low
         if(S.fps < 30 && !S.lowPerfMode && S.autoQualityFrames++ > 3){
@@ -1133,11 +1165,16 @@ function gameLoop(now){
     }
 
     if(S.phase!=='playing'||S.paused){
-        if(S.phase==='dead'||S.phase==='easter') renderer.render(scene,cam);
+        if(S.phase==='dead'||S.phase==='easter') {
+            try { renderer.render(scene,cam); } catch(e){}
+        }
         return;
     }
 
-    const dt=Math.min(clock.getDelta(),0.06);
+    let dt;
+    try { dt = Math.min(clock.getDelta(), 0.06); }
+    catch(e){ dt = 0.016; }
+    if(!isFinite(dt) || dt <= 0) dt = 0.016;
 
     updateCar(dt);
     checkRoad(dt);
@@ -1161,9 +1198,11 @@ function gameLoop(now){
     updateHUD(dt);
     updateMusicPoll();
     updateAudio();
+    // v0.7: push game state to Lua VM (was missing entirely)
+    updateLuaState();
     if(Date.now()-S.t0>=C.EASTER_MS) triggerEaster();
     if(debugOverlay && S.debugOverlay) updateDebug();
-    renderer.render(scene,cam);
+    try { renderer.render(scene,cam); } catch(e){}
 }
 
 function startLoop(){
@@ -1171,12 +1210,20 @@ function startLoop(){
     loopRunning=true;
     clock.start();
     gameLoop._lastNow = 0;
-    requestAnimationFrame(gameLoop);
+    loopToken++;                       // v0.7: invalidate any stale callbacks
+    const myToken = loopToken;
+    requestAnimationFrame(t => gameLoop(t, myToken));
 }
-function stopLoop(){ loopRunning=false; }
+function stopLoop(){
+    loopRunning=false;
+    loopToken++;                       // v0.7: invalidate pending callbacks
+}
 
 /* ── CAR PHYSICS ── */
 function updateCar(dt){
+    // v0.7: defensive — if carGroup disappeared (init failure recovery),
+    // bail out instead of throwing mid-frame.
+    if(!carGroup) return;
     let target=C.CAR_BASE_SPEED;
     // v0.6: boost
     if(S.boostActive > 0) {
@@ -1243,10 +1290,12 @@ function updateCar(dt){
     if(absX > hardLimit) carGroup.position.x = Math.sign(carGroup.position.x) * hardLimit;
 
     // PERF: cache wheels length
+    // v0.7: null-safe — wheel groups have tire+hub at [0] and [1].
     for(let i=0,n=wheels.length;i<n;i++){
         const w = wheels[i];
-        w.children[0].rotation.x+=fwd*2;
-        w.children[1].rotation.x+=fwd*2;
+        if(!w || !w.children || w.children.length < 2) continue;
+        if(w.children[0]) w.children[0].rotation.x+=fwd*2;
+        if(w.children[1]) w.children[1].rotation.x+=fwd*2;
     }
 }
 
@@ -1675,6 +1724,10 @@ function showAchievement(title, msg){
    GAME STATE
    ─────────────────────────────────────────── */
 function startGame(){
+    // v0.7: if init failed, do nothing — the error overlay is already shown.
+    if(initFailed){
+        return;
+    }
     // v0.6: prompt for music before starting
     if(musicPrompt && musicPrompt.style.display !== 'none') {
         // Already showing prompt, wait for user
@@ -1688,6 +1741,15 @@ function startGame(){
 }
 
 function startGameAfterMusic(musicPicked){
+    // v0.7 FIX: bail out cleanly if the scene wasn't initialized.
+    // Previously this threw at `carGroup.rotation.y` (carGroup undefined
+    // when init() failed silently) — leaving the welcome screen hidden
+    // but the game never starting. The user saw a blank canvas and
+    // reported "ấn chơi ngay thì bị đứng, không vào được".
+    if(initFailed || !scene || !cam || !carGroup || !renderer){
+        showFatalError('Không thể khởi tạo 3D. Thiết bị của bạn có thể không hỗ trợ WebGL2.');
+        return;
+    }
     $('welcomeScreen').style.display='none';
     if(musicPrompt) musicPrompt.style.display='none';
     canvas.style.display='block';
@@ -1718,12 +1780,48 @@ function startGameAfterMusic(musicPicked){
     cam.lookAt(carGroup.position.x+Math.sin(r)*C.CAM_LOOK_AHEAD, 1.5, carGroup.position.z-Math.cos(r)*C.CAM_LOOK_AHEAD);
 
     if(!audioCtx) initAudio();
-    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    // v0.7: resume() must be in a user-gesture — we're in one (tap).
+    if(audioCtx && audioCtx.state === 'suspended') {
+        try { audioCtx.resume(); } catch(e){}
+    }
 
     updateCoinDisplay();
     resetInput();
     startLoop();
 }
+
+// v0.7: show a fatal-error overlay when init() fails so the user knows
+// what happened instead of staring at a blank canvas.
+function showFatalError(msg){
+    const errEl = document.createElement('div');
+    errEl.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;'+
+        'background:rgba(0,0,0,.92);color:#fbbf24;font-family:system-ui,sans-serif;'+
+        'display:flex;align-items:center;justify-content:center;flex-direction:column;'+
+        'padding:32px;text-align:center;z-index:9999;';
+    errEl.innerHTML =
+        '<div style="font-size:42px;margin-bottom:16px;">⚠️</div>'+
+        '<div style="font-size:18px;font-weight:800;letter-spacing:1px;margin-bottom:12px;">LỖI KHỞI TẠO</div>'+
+        '<div style="font-size:14px;color:#cbd5e1;line-height:1.6;max-width:480px;">'+
+        (msg || 'Không thể khởi tạo game.')+
+        '<br><br><small style="color:#64748b;">Vui lòng cập nhật Android System WebView và thử lại.</small></div>';
+    document.body.appendChild(errEl);
+}
+
+// v0.7: push game state to Lua VM so scripts see fresh values.
+// Previously the Lua `game` table was set once at init (all zeros) and
+// never updated, so on_death.lua / on_achievement.lua always saw dist=0.
+function updateLuaState(){
+    if(_luaStateCounter++ < C.LUA_UPDATE_FRAMES) return;
+    _luaStateCounter = 0;
+    try {
+        if(typeof AndroidBridge !== 'undefined' && AndroidBridge.updateLuaGameState) {
+            AndroidBridge.updateLuaGameState(
+                S.dist, S.speed*3.6, S.deathCount, S.bestDist, 1
+            );
+        }
+    } catch(e) {}
+}
+let _luaStateCounter = 0;
 
 function triggerDeath(){
     if(S.dead) return;
@@ -1778,6 +1876,8 @@ function triggerEaster(){
 }
 
 function restart(){
+    // v0.7: don't attempt restart if init failed.
+    if(initFailed || !carGroup || !cam) return;
     stopLoop();
     const prevBest = S.bestDist;
     S.phase='playing';
@@ -1809,7 +1909,10 @@ function restart(){
     carGroup.rotation.z=0;
     carGroup.visible = true;
     carGroup.scale.set(C.CAR_SCALE, C.CAR_SCALE, C.CAR_SCALE);
-    carBodyMesh.material.color.setHex(0xcc0000);
+    // v0.7: null-safe — carBodyMesh might be undefined if buildCar threw
+    if(carBodyMesh && carBodyMesh.material) {
+        carBodyMesh.material.color.setHex(0xcc0000);
+    }
 
     segData.forEach(s=>{s.grp.position.z=-s.idx*C.SEG_LEN;});
     obstaclePool.forEach(o=>{
@@ -1864,12 +1967,65 @@ window.resumeGame=function(){
 };
 
 /* ── BOOT ── */
-init();
-renderer.render(scene, cam);
+// v0.7 FIX: wrap init() in try/catch. Three.js r160 requires WebGL2;
+// on devices whose System WebView is too old (no WebGL2), the
+// WebGLRenderer constructor throws. Previously this aborted the IIFE
+// mid-script — startGame() was still callable but carGroup/cam were
+// undefined, so startGameAfterMusic() threw at carGroup.rotation.y
+// and the game appeared "frozen" with a blank canvas after pressing
+// "CHƠI NGAY". Now we set initFailed=true and the startGame path
+// shows a friendly error overlay instead.
+try {
+    init();
+    if(renderer && scene && cam) renderer.render(scene, cam);
+} catch(e){
+    initFailed = true;
+    console.error('[Sa Mạc Ảo Giác] init() failed:', e);
+    // Show error overlay immediately so the user knows before tapping Play.
+    showFatalError('Không thể khởi tạo đồ họa 3D: ' + (e && e.message ? e.message : e) +
+        '.<br><br>Hãy cập nhật Android System WebView lên phiên bản mới nhất và mở lại.');
+}
 
 /* ============================================================
-   CHANGELOG (v0.6 — summary)
+   CHANGELOG
    ============================================================
+   v0.7 — CRITICAL BUG FIXES (the "press play → freeze" fix)
+   ------------------------------------------------------------
+   1. **Token-based gameLoop** — previously, `stopLoop()+startLoop()`
+      (called by `restart()` and the pause-screen Quit button) left
+      the OLD `requestAnimationFrame` callback alive. When it fired,
+      `loopRunning` was true again, so it scheduled ANOTHER callback.
+      Each restart doubled the number of gameLoop chains → exponential
+      explosion → freeze after 2-3 restarts. Now a `loopToken` is
+      incremented on every stop/start, and stale callbacks no-op.
+   2. **init() try/catch + error overlay** — Three.js r160 requires
+      WebGL2. On devices whose Android System WebView lacks WebGL2,
+      `new THREE.WebGLRenderer()` throws, aborting the IIFE. After
+      that, `startGame()` was still callable but `carGroup`/`cam`
+      were undefined → `startGameAfterMusic()` threw at the camera
+      setup → blank canvas → "ấn chơi ngay thì bị đứng". Now we set
+      `initFailed=true` and show a friendly Vietnamese error overlay
+      telling the user to update Android System WebView.
+   3. **Touch event de-duplication** — `addClick()` registered BOTH
+      `click` and `touchstart`. On Android WebView both fire per tap,
+      so `fn()` ran twice. For `playBtn` this was safe (guard), but
+      for `musicYes`/`musicNo` it caused double `openMusicPicker()`
+      and double `startGameAfterMusic()`. Now we track the last
+      touchstart time and suppress the click within 600ms.
+   4. **FPS counter NaN/Infinity guard** — first frame had `dt=0`,
+      producing `1000/0 = Infinity`, which propagated to the HUD as
+      "Infinity FPS". Now clamped to 60.
+   5. **Null-safe carBodyMesh / wheels** — `restart()` no longer
+      throws if `buildCar()` partially failed.
+   6. **Lua VM gets fresh game state** — `updateLuaGameState` was
+      declared in Java but NEVER called from JS, so Lua scripts
+      always saw `dist_km=0`. Now JS pushes state every 30 frames.
+   7. **Audio resume in user gesture** — `audioCtx.resume()` is now
+      wrapped in try/catch and called inside the tap handler (where
+      the user gesture is still active).
+
+   v0.6 — Performance + Music + Multi-language (preserved)
+   ------------------------------------------------------------
    Performance:
      - Shadow map 1024 -> 512 (PCFSoftShadowMap -> PCFShadowMap)
      - MeshPhongMaterial -> MeshLambertMaterial for car body
@@ -1889,7 +2045,7 @@ renderer.render(scene, cam);
      - Native audio mixer (C++) for engine ducking
      - JS polls AndroidBridge.isMusicPlaying() at 10Hz
 
-   10 NEW TROLL FEATURES:
+   10 TROLL FEATURES (v0.6):
      1. Gravity flip (car bounces upside down)
      2. Invisible car (blinks in and out)
      3. Inverted screen colors (CSS filter invert)
@@ -1901,7 +2057,7 @@ renderer.render(scene, cam);
      9. Fake coin theft (camel steals coins)
      10. Engine curse (silent then very loud)
 
-   20 NEW USEFUL FEATURES:
+   20 USEFUL FEATURES (v0.6):
      1. Coins collectible + counter
      2. Boost meter (regenerates, tap button or Shift to use)
      3. Near-miss tracking (close calls give coins)

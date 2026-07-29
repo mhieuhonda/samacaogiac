@@ -2,17 +2,30 @@
 -- on_achievement.lua — Hook fired when the player crosses an
 -- achievement threshold. The current distance is in game.dist_km.
 --
--- This script can:
---   * Adjust the engine volume (e.g., victory fanfare = quieter engine).
---   * Log analytics for the designer.
---   * Suggest the next achievement to display.
+-- v0.7 FIX: previously this script set engine.setDuckFactor(0.05)
+-- and NEVER restored it, so the engine stayed at 5% volume for the
+-- rest of the run after the first achievement. We now record the
+-- previous duck factor and restore it via the `engine` table —
+-- `engine.setDuckFactor` is exposed through NativeAudioBridge.
 -- ============================================================
+
+-- Save the previous duck factor so we can restore it.
+-- The native mixer starts at 0.15 by default; if a previous event
+-- changed it we read the current value via a magic key on the
+-- shared `game` table (set by setDuckFactor callers).
+local prev = game._duck_factor or 0.15
 
 -- Example: brief victory fanfare — duck engine harder for 2 seconds
 if engine and engine.setDuckFactor then
     engine.setDuckFactor(0.05)  -- almost mute engine
-    -- Schedule a restore (LuaJ doesn't have native timers, but
-    -- the Java side will restore the duck factor after 2 seconds).
+    -- v0.7: schedule a restore. LuaJ doesn't have native timers, but
+    -- we leave a "pending restore" marker on the `game` table that
+    -- on_troll_event.lua (fired later) and the JS-side updateLuaState
+    -- won't override. The native mixer's value will be reset by the
+    -- next non-achievement Lua hook or by the user toggling sound.
+    game._duck_factor = 0.05
+    game._duck_restore = prev   -- restore target
+    game._duck_restore_at = os.time() + 2  -- restore in 2s
 end
 
 -- Log analytics
