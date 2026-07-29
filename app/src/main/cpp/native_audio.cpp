@@ -119,7 +119,7 @@ Java_com_samacaogiac_game_NativeAudioBridge_nativeApplyGainS16(JNIEnv* env, jcla
 // ---- Build info (for diagnostics) ----
 JNIEXPORT jstring JNICALL
 Java_com_samacaogiac_game_NativeAudioBridge_nativeBuildInfo(JNIEnv* env, jclass clazz) {
-    std::string info = "samacaogiac native audio v0.7 | arm-optimized | built " __DATE__ " " __TIME__;
+    std::string info = "samacaogiac native audio v0.9 | arm-optimized | built " __DATE__ " " __TIME__;
     return env->NewStringUTF(info.c_str());
 }
 

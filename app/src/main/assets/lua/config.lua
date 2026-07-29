@@ -1,20 +1,16 @@
 -- ============================================================
 -- config.lua — Game balance config tunable at runtime.
---
--- Designers can edit these values WITHOUT rebuilding the APK.
--- Just push a new commit with updated values and repackage.
--- The Lua VM is initialized at app startup by LuaScriptRunner.
+-- v0.9: Updated for dual-mode (Desert + Zombie)
 -- ============================================================
 
 -- Audio ducking: when music plays, engine drops to this fraction
--- of its base volume. Lower = quieter engine.
 config = {
-    duck_factor      = 0.15,    -- 15% of base volume
-    base_engine_vol  = 0.03,    -- nominal engine volume
-    music_priority   = "high",  -- "high" | "normal"
+    duck_factor      = 0.15,
+    base_engine_vol  = 0.03,
+    music_priority   = "high",
 }
 
--- Achievement thresholds (km). Edit to make the game harder/easier.
+-- Achievement thresholds (km)
 achievements = {
     { km = 0.5,  title = "KHỞI HÀNH",   msg = "Bạn đã đi 0.5km! ...Đó là khoảng cách của 1 con gián" },
     { km = 1.0,  title = "KM ĐẦU TIÊN", msg = "1km! Bố mẹ bạn rất tự hào... về việc bạn lãng phí thời gian" },
@@ -26,6 +22,17 @@ achievements = {
     { km = 100.0,title = "GOD",          msg = "100km! Bạn đã đi xa hơn... cuộc đời của 1 số người" },
 }
 
+-- Zombie mode wave config
+zombie = {
+    normal_hp = 2,
+    mutant_hp = 5,
+    horror_hp = 10,
+    normal_speed = 3,
+    mutant_speed = 5,
+    horror_speed = 7,
+    wave_scale = 2,
+}
+
 -- Troll frequency (seconds between events)
 troll = {
     min_interval = 12.0,
@@ -33,10 +40,10 @@ troll = {
     cooldown     = 3.0,
 }
 
--- Apply config to native mixer (best-effort)
+-- Apply config to native mixer
 if engine and engine.setDuckFactor and engine.setBaseVolume then
     engine.setDuckFactor(config.duck_factor)
     engine.setBaseVolume(config.base_engine_vol)
 end
 
-log.info("config.lua loaded: " .. #achievements .. " achievements configured")
+log.info("config.lua v0.9 loaded: " .. #achievements .. " achievements configured")

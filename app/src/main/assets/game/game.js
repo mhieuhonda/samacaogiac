@@ -1,5 +1,5 @@
 // ============================================================
-// SA MẠC ẢO GIÁC — Game Engine v0.8
+// SA MẠC ẢO GIÁC — Game Engine v0.9
 // ============================================================
 // Major v0.8 changes:
 //   * CRITICAL FIX — the "press CHƠI NGAY → nothing happens" bug:
@@ -164,6 +164,15 @@ const S = {
     cameraMode: 0,            // 0=follow, 1=far, 2=cockpit
     // 1km+ tracking
     lastMilestone: 0,
+    // v0.9: Zombie mode
+    zombieHealth: 100, zombieAmmo: 30, zombieAmmoReserve: 120,
+    zombieWave: 0, zombieKills: 0, zombieTotalKills: 0, zombieBestWave: 0,
+    zombieReloading: false, zombieReloadTimer: 0, zombieWaveActive: false,
+    zombieSpawnQueue: [], zombieLastShot: 0, zombieMuzzleFlash: 0,
+    zombiePlayerX: 0, zombieDamageFlash: 0, zombieBetweenWaves: false,
+    zombieBetweenTimer: 0, zombieSpawnTimer: 0,
+    // v0.9: Graphics
+    qualityLevel: 1, fpsLimit: 0, sfxVolume: 0.7, engineVolume: 0.3, trollLevel: 1,
 };
 
 /* ── THREE ── */
@@ -193,6 +202,11 @@ let _shadowEnabled = false;  // cached at init
 // when the display:none comes from a CSS rule rather than inline style,
 // which caused the first-tap dead-end bug.
 let _musicPromptVisible = false;
+let GameMode = 'desert';
+let _selectedMode = 'desert';
+let zombiePool = [], bulletPool = [];
+let zombiePlayerMesh, zombieMuzzleMesh;
+let waveAnnounceTimeout = null;
 
 /* ── TIMEOUT TRACKING ── */
 let trollTimeout = null;
@@ -306,6 +320,15 @@ function playCoinSfx(){
     } catch(e){}
 }
 
+
+// v0.9: Zombie SFX
+function playGunshot(){if(!audioCtx||!S.audioEnabled)return;try{const bufSize=audioCtx.sampleRate*0.15;const buf=audioCtx.createBuffer(1,bufSize,audioCtx.sampleRate);const data=buf.getChannelData(0);for(let i=0;i<bufSize;i++)data[i]=(Math.random()*2-1)*Math.exp(-i/(bufSize*0.1));const src=audioCtx.createBufferSource();src.buffer=buf;const g=audioCtx.createGain();g.gain.value=0.25*S.sfxVolume;const filt=audioCtx.createBiquadFilter();filt.type='lowpass';filt.frequency.value=3000;src.connect(filt);filt.connect(g);g.connect(audioCtx.destination);src.start();const o=audioCtx.createOscillator();const g2=audioCtx.createGain();o.type='sine';o.frequency.value=80;g2.gain.setValueAtTime(0.2*S.sfxVolume,audioCtx.currentTime);g2.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.1);o.connect(g2);g2.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.1);}catch(e){}}
+function playZombieGroan(){if(!audioCtx||!S.audioEnabled)return;try{const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type='sawtooth';o.frequency.value=60+Math.random()*40;g.gain.setValueAtTime(0.06*S.sfxVolume,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.6);o.frequency.linearRampToValueAtTime(40,audioCtx.currentTime+0.6);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.6);}catch(e){}}
+function playZombieDeath(){if(!audioCtx||!S.audioEnabled)return;try{const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type='sawtooth';o.frequency.value=200;o.frequency.exponentialRampToValueAtTime(30,audioCtx.currentTime+0.4);g.gain.setValueAtTime(0.12*S.sfxVolume,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.4);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.4);}catch(e){}}
+function playReloadClick(){if(!audioCtx||!S.audioEnabled)return;try{const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type='square';o.frequency.value=1200;g.gain.setValueAtTime(0.1*S.sfxVolume,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.05);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.05);}catch(e){}}
+function playWaveAlarm(){if(!audioCtx||!S.audioEnabled)return;try{[0,0.15,0.3].forEach(delay=>{const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type='square';o.frequency.value=880;g.gain.setValueAtTime(0.1*S.sfxVolume,audioCtx.currentTime+delay);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+delay+0.1);o.connect(g);g.connect(audioCtx.destination);o.start(audioCtx.currentTime+delay);o.stop(audioCtx.currentTime+delay+0.1);});}catch(e){}}
+function playDamageThud(){if(!audioCtx||!S.audioEnabled)return;try{const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type='sine';o.frequency.value=50;g.gain.setValueAtTime(0.15*S.sfxVolume,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.2);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.2);}catch(e){}}
+
 /* ── INPUT ── */
 const inp = { left:false, right:false, gas:false, brake:false, boost:false };
 
@@ -350,6 +373,21 @@ const settingsScr = $('settingsScr');
 const cheatInput = $('cheatInput');
 const topSpeedH = $('topSpeedHud');
 const totalKmH = $('totalKmHud');
+const zombieCtrlEl=$('zombieControls');
+const zombieHudEl=$('zombieHud');
+const ammoHudEl=$('ammoHud');
+const waveHudEl=$('waveHud');
+const killHudEl=$('killHud');
+const healthBarEl=$('healthBar');
+const healthFillEl=$('healthFill');
+const crosshairEl=$('crosshair');
+const crosshairDotEl=$('crosshairDot');
+const zombieDeathScr=$('zombieDeathScreen');
+const zombieDeathInfo=$('zombieDeathInfo');
+const zombieDeathBest=$('zombieDeathBest');
+const waveAnnounceEl=$('waveAnnounce');
+const waText=$('waText');
+const waSub=$('waSub');
 
 /* ── UI ── */
 function onBtn(id, fn){
@@ -365,6 +403,8 @@ function onBtn(id, fn){
 onBtn('bL',v=>{inp.left=v}); onBtn('bR',v=>{inp.right=v});
 onBtn('bG',v=>{inp.gas=v}); onBtn('bB',v=>{inp.brake=v});
 onBtn('bBoost',v=>{inp.boost=v});
+onBtn('bZL',v=>{inp.left=v}); onBtn('bZR',v=>{inp.right=v});
+onBtn('bShoot',v=>{inp.shoot=v}); onBtn('bReload',v=>{if(v)reloadZombie();});
 
 function addClick(id, fn){
     const el=$(id);
@@ -387,9 +427,13 @@ function addClick(id, fn){
         fn();
     });
 }
+addClick('modeDesert',()=>{_selectedMode='desert';highlightMode();});
+addClick('modeZombie',()=>{_selectedMode='zombie';highlightMode();});
+function highlightMode(){const d=$('modeDesert'),z=$('modeZombie');if(d)d.style.borderColor=_selectedMode==='desert'?'#f59e0b':'rgba(255,255,255,.12)';if(z)z.style.borderColor=_selectedMode==='zombie'?'#ef4444':'rgba(255,255,255,.12)';}
+highlightMode();
 addClick('playBtn', startGame);
 addClick('replayBtn', restart);
-addClick('easterBtn', restart);
+addClick('easterBtn', restart);addClick('zombieReplayBtn', restart);
 addClick('pauseBtn', togglePause);
 addClick('resumeBtn', ()=>{ if(S.paused) togglePause(); });
 // v0.8 FIX: hide ALL gameplay UI when quitting to welcome screen.
@@ -401,12 +445,8 @@ addClick('quitBtn', ()=>{
     if(S.paused){
         S.phase='welcome';
         $('welcomeScreen').style.display='flex';
-        deathScr.style.display='none';
-        eastScr.style.display='none';
-        pauseScr.style.display='none';
-        hudEl.style.display='none';
-        ctrlEl.style.display='none';
-        showGameUI(false);
+        deathScr.style.display='none';eastScr.style.display='none';pauseScr.style.display='none';zombieDeathScr.style.display='none';
+        hudEl.style.display='none';ctrlEl.style.display='none';zombieCtrlEl.style.display='none';hideZombieUI();showGameUI(false);
         offVig.style.display='none';
         revInd.style.display='none';
         fakeNotif.style.display='none';
@@ -429,6 +469,15 @@ addClick('toggleSound', toggleSoundFromButton);
 addClick('toggleHud', toggleHudFromButton);
 addClick('toggleDebug', toggleDebugFromButton);
 addClick('cheatSubmit', submitCheat);
+function setupSlider(id,valId,labels,fn){const sl=$(id),vl=$(valId);if(!sl||!vl)return;sl.addEventListener('input',()=>{const v=parseInt(sl.value);vl.textContent=labels?labels[v]||v:v+'%';if(fn)fn(v);});}
+setupSlider('qualitySlider','qualityVal',['Low','Auto','High'],v=>{S.qualityLevel=v;});
+setupSlider('fpsLimitSlider','fpsLimitVal',['30','60','Không'],v=>{S.fpsLimit=v;});
+setupSlider('shadowSlider','shadowVal',['Off','On'],v=>{S.shadowEnabled=v===1;});
+setupSlider('particleSlider','particleVal',['Low','Medium','High'],v=>{S.particleLevel=v;});
+setupSlider('sfxVolSlider','sfxVolVal',null,v=>{S.sfxVolume=v/100;});
+setupSlider('engineVolSlider','engineVolVal',null,v=>{S.engineVolume=v/100;C.ENGINE_BASE_VOL=0.03*v/30;});
+setupSlider('cameraSlider','cameraVal',['Follow','Far','Cockpit'],v=>{S.cameraMode=v;});
+setupSlider('trollSlider','trollVal',['Off','Normal','Chaos'],v=>{S.trollLevel=v;});
 
 /* Keyboard controls */
 const cheatBuffer = [];
@@ -438,6 +487,7 @@ document.addEventListener('keydown', e=>{
     if(e.key==='ArrowUp'||e.key==='w'||e.key==='W') inp.gas=true;
     if(e.key==='ArrowDown'||e.key==='s'||e.key==='S') inp.brake=true;
     if(e.key==='Shift') inp.boost=true;
+    if(e.key==='r'||e.key==='R'){if(GameMode==='zombie')reloadZombie();}
     if(e.key===' '||e.key==='Enter') {
         // v0.8 FIX: use the explicit flag instead of inspecting style.display.
         if(S.phase==='welcome' && !_musicPromptVisible) startGame();
@@ -457,8 +507,7 @@ document.addEventListener('keyup', e=>{
     if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') inp.right=false;
     if(e.key==='ArrowUp'||e.key==='w'||e.key==='W') inp.gas=false;
     if(e.key==='ArrowDown'||e.key==='s'||e.key==='S') inp.brake=false;
-    if(e.key==='Shift') inp.boost=false;
-});
+    if(e.key==='Shift') inp.boost=false;if(e.key===' ')inp.shoot=false;});
 
 // v0.6: touch swipe controls (alternative to buttons)
 let touchStart = null;
@@ -627,18 +676,10 @@ function togglePause(){
     if(S.phase!=='playing') return;
     S.paused = !S.paused;
     if(S.paused){
-        pauseScr.style.display='flex';
-        hudEl.style.display='none';
-        ctrlEl.style.display='none';
-        // v0.8: hide gameplay UI buttons during pause (clean look)
-        showGameUI(false);
+        pauseScr.style.display='flex';hudEl.style.display='none';ctrlEl.style.display='none';zombieCtrlEl.style.display='none';showGameUI(false);
         if(audioCtx) audioCtx.suspend();
     } else {
-        pauseScr.style.display='none';
-        hudEl.style.display='block';
-        ctrlEl.style.display='block';
-        // v0.8: re-show gameplay UI buttons on resume
-        showGameUI(true);
+        pauseScr.style.display='none';hudEl.style.display='block';if(GameMode==='desert')ctrlEl.style.display='block';else zombieCtrlEl.style.display='flex';showGameUI(true);
         if(audioCtx) audioCtx.resume();
         clock.start();
     }
@@ -738,6 +779,15 @@ function init(){
     buildObstacles(low);
     buildCoins(low);  // v0.6
     if(!low) buildDust();
+    // v0.9: zombie mode weapon
+    zombiePlayerMesh=new THREE.Group();
+    const gunBody=new THREE.Mesh(new THREE.BoxGeometry(.15,.15,.6),new THREE.MeshLambertMaterial({color:0x333333}));
+    gunBody.position.set(0.3,-0.2,-0.5);zombiePlayerMesh.add(gunBody);
+    const gunBarrel=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,.4,8),new THREE.MeshLambertMaterial({color:0x222222}));
+    gunBarrel.rotation.x=Math.PI/2;gunBarrel.position.set(0.3,-0.15,-0.9);zombiePlayerMesh.add(gunBarrel);
+    zombieMuzzleMesh=new THREE.Mesh(new THREE.SphereGeometry(.08,6,6),new THREE.MeshBasicMaterial({color:0xffaa00,transparent:true,opacity:0}));
+    zombieMuzzleMesh.position.set(0.3,-0.15,-1.1);zombiePlayerMesh.add(zombieMuzzleMesh);
+    zombiePlayerMesh.visible=false;scene.add(zombiePlayerMesh);
 
     window.addEventListener('resize', onResize, {passive: true});
 }
@@ -1224,6 +1274,158 @@ function updateDust(dt){
     dustPts.geometry.attributes.position.needsUpdate=true;
 }
 
+
+
+/* ───────────────────────────────────────────
+   ZOMBIE MODE (v0.9)
+   ─────────────────────────────────────────── */
+const ZC = {
+    WAVE_BASE: 5, HP_NORMAL: 2, HP_MUTANT: 5, HP_HORROR: 10,
+    SPEED_NORMAL: 3, SPEED_MUTANT: 5, SPEED_HORROR: 7,
+    DMG_NORMAL: 10, DMG_MUTANT: 20, DMG_HORROR: 35,
+    BULLET_SPEED: 50, BULLET_DMG: 1, MAX_AMMO: 30,
+    RELOAD_TIME: 1.5, MAX_HEALTH: 100, SPAWN_DIST: 60, ATTACK_RANGE: 2.5,
+};
+
+function createZombie(type){
+    const g=new THREE.Group();
+    let bodyColor,headColor,hp,speed,scale;
+    if(type==='normal'){bodyColor=0x3a7a3a;headColor=0x4a8a4a;hp=ZC.HP_NORMAL;speed=ZC.SPEED_NORMAL;scale=1;}
+    else if(type==='mutant'){bodyColor=0x6a3a8a;headColor=0x8a4aaa;hp=ZC.HP_MUTANT;speed=ZC.SPEED_MUTANT;scale=1.4;}
+    else{bodyColor=0x4a1a1a;headColor=0x6a0a0a;hp=ZC.HP_HORROR;speed=ZC.SPEED_HORROR;scale=1.8;}
+    const bodyMat=new THREE.MeshLambertMaterial({color:bodyColor,flatShading:true});
+    const headMat=new THREE.MeshLambertMaterial({color:headColor,flatShading:true});
+    const eyeMat=new THREE.MeshBasicMaterial({color:type==='horror'?0xff0000:0xff4444});
+    const body=new THREE.Mesh(new THREE.BoxGeometry(.8*scale,1.2*scale,.5*scale),bodyMat);body.position.y=1.2*scale;g.add(body);
+    const headSize=type==='horror'?.5*scale:.35*scale;
+    const head=new THREE.Mesh(new THREE.SphereGeometry(headSize,8,8),headMat);head.position.y=2*scale;g.add(head);
+    const eyeL=new THREE.Mesh(new THREE.SphereGeometry(.06*scale,4,4),eyeMat);eyeL.position.set(-.12*scale,2.05*scale,headSize*.8);g.add(eyeL);
+    const eyeR=new THREE.Mesh(new THREE.SphereGeometry(.06*scale,4,4),eyeMat);eyeR.position.set(.12*scale,2.05*scale,headSize*.8);g.add(eyeR);
+    const armMat=new THREE.MeshLambertMaterial({color:bodyColor});
+    const armL=new THREE.Mesh(new THREE.BoxGeometry(.2*scale,.8*scale,.2*scale),armMat);armL.position.set(-.5*scale,1.2*scale,.2*scale);armL.rotation.x=-.5;g.add(armL);
+    const armR=new THREE.Mesh(new THREE.BoxGeometry(.2*scale,.8*scale,.2*scale),armMat);armR.position.set(.5*scale,1.2*scale,.2*scale);armR.rotation.x=-.5;g.add(armR);
+    const legL=new THREE.Mesh(new THREE.BoxGeometry(.2*scale,.8*scale,.2*scale),armMat);legL.position.set(-.2*scale,.4*scale,0);g.add(legL);
+    const legR=new THREE.Mesh(new THREE.BoxGeometry(.2*scale,.8*scale,.2*scale),armMat);legR.position.set(.2*scale,.4*scale,0);g.add(legR);
+    if(type==='horror'){for(let i=0;i<5;i++){const spike=new THREE.Mesh(new THREE.ConeGeometry(.05*scale,.3*scale,4),new THREE.MeshBasicMaterial({color:0x880000}));spike.position.set((Math.random()-.5)*.6*scale,1.2*scale+Math.random()*.8*scale,(Math.random()-.5)*.3*scale);g.add(spike);}}
+    g.userData={isZombie:true,type,hp,maxHp:hp,speed,damage:type==='normal'?ZC.DMG_NORMAL:type==='mutant'?ZC.DMG_MUTANT:ZC.DMG_HORROR,attackCooldown:0,walkPhase:Math.random()*Math.PI*2};
+    g.castShadow=true;return g;
+}
+
+function createBullet(){const bullet=new THREE.Mesh(new THREE.SphereGeometry(.08,4,4),new THREE.MeshBasicMaterial({color:0xffff00}));bullet.userData={isBullet:true,active:false};bullet.visible=false;return bullet;}
+
+function spawnZombieWave(){
+    S.zombieWave++;S.zombieWaveActive=true;S.zombieBetweenWaves=false;
+    const w=S.zombieWave;
+    let nC=3+w*2,mC=Math.max(0,Math.floor((w-2)*1.5)),hC=Math.max(0,Math.floor((w-4)*0.8));
+    const maxT=20;let total=nC+mC+hC;
+    if(total>maxT){const r=maxT/total;nC=Math.floor(nC*r);mC=Math.floor(mC*r);hC=Math.floor(hC*r);}
+    S.zombieSpawnQueue=[];
+    for(let i=0;i<nC;i++)S.zombieSpawnQueue.push('normal');
+    for(let i=0;i<mC;i++)S.zombieSpawnQueue.push('mutant');
+    for(let i=0;i<hC;i++)S.zombieSpawnQueue.push('horror');
+    for(let i=S.zombieSpawnQueue.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[S.zombieSpawnQueue[i],S.zombieSpawnQueue[j]]=[S.zombieSpawnQueue[j],S.zombieSpawnQueue[i]];}
+    if(waText)waText.textContent='WAVE '+w;
+    if(waSub)waSub.textContent=total+' Zombies';
+    if(waveAnnounceEl)waveAnnounceEl.style.display='block';
+    playWaveAlarm();
+    if(waveAnnounceTimeout)clearTimeout(waveAnnounceTimeout);
+    waveAnnounceTimeout=setTimeout(()=>{if(waveAnnounceEl)waveAnnounceEl.style.display='none';},2500);
+    S.zombieSpawnTimer=0;updateZombieHud();
+}
+
+function updateZombieMode(dt){
+    if(S.dead||S.paused)return;
+    // Reload
+    if(S.zombieReloading){S.zombieReloadTimer-=dt;if(S.zombieReloadTimer<=0){S.zombieReloading=false;const needed=ZC.MAX_AMMO-S.zombieAmmo;const avail=Math.min(needed,S.zombieAmmoReserve);S.zombieAmmo+=avail;S.zombieAmmoReserve-=avail;playReloadClick();}}
+    // Spawn
+    if(S.zombieSpawnQueue.length>0){S.zombieSpawnTimer=(S.zombieSpawnTimer||0)+dt;if(S.zombieSpawnTimer>0.5){S.zombieSpawnTimer=0;const type=S.zombieSpawnQueue.shift();const z=createZombie(type);z.position.set((Math.random()-.5)*14,0,-ZC.SPAWN_DIST+Math.random()*10);z.userData.walkPhase=Math.random()*Math.PI*2;scene.add(z);zombiePool.push(z);playZombieGroan();}}
+    // Move player
+    const ms=10;if(inp.left)S.zombiePlayerX-=ms*dt;if(inp.right)S.zombiePlayerX+=ms*dt;S.zombiePlayerX=Math.max(-8,Math.min(8,S.zombiePlayerX));
+    // Shoot
+    if(inp.shoot&&!S.zombieReloading&&S.zombieAmmo>0){const now=performance.now();if(now-S.zombieLastShot>150){S.zombieLastShot=now;S.zombieAmmo--;shootBullet();playGunshot();vibrate(30);S.zombieMuzzleFlash=0.08;if(zombieMuzzleMesh)zombieMuzzleMesh.material.opacity=1;}}
+    if(S.zombieAmmo<=0&&!S.zombieReloading&&S.zombieAmmoReserve>0)reloadZombie();
+    if(S.zombieMuzzleFlash>0){S.zombieMuzzleFlash-=dt;if(S.zombieMuzzleFlash<=0&&zombieMuzzleMesh)zombieMuzzleMesh.material.opacity=0;}
+    if(S.zombieDamageFlash>0){S.zombieDamageFlash-=dt;document.body.style.filter=S.zombieDamageFlash>0?'brightness(1.5) saturate(0.5)':'';}
+    // Update zombies
+    for(let i=zombiePool.length-1;i>=0;i--){
+        const z=zombiePool[i];if(!z.userData.isZombie)continue;
+        const dx=S.zombiePlayerX-z.position.x,dz=-z.position.z;
+        const dist=Math.sqrt(dx*dx+dz*dz);
+        if(dist>0.1){z.position.x+=(dx/dist)*z.userData.speed*dt;z.position.z+=(dz/dist)*z.userData.speed*dt;}
+        z.userData.walkPhase+=dt*z.userData.speed*2;z.rotation.z=Math.sin(z.userData.walkPhase)*0.05;z.rotation.y=Math.atan2(dx,dz);
+        if(dist<ZC.ATTACK_RANGE){z.userData.attackCooldown-=dt;if(z.userData.attackCooldown<=0){z.userData.attackCooldown=1;S.zombieHealth-=z.userData.damage;playDamageThud();vibrate(100);S.zombieDamageFlash=0.15;if(S.zombieHealth<=0){S.zombieHealth=0;triggerZombieDeath();}updateZombieHud();}}
+    }
+    // Update bullets
+    for(let i=0,n=bulletPool.length;i<n;i++){
+        const b=bulletPool[i];if(!b.userData.active)continue;
+        b.position.z-=ZC.BULLET_SPEED*dt;
+        for(let j=zombiePool.length-1;j>=0;j--){
+            const z=zombiePool[j];if(!z.userData.isZombie)continue;
+            const dx=b.position.x-z.position.x,dz=b.position.z-z.position.z;
+            const hitR=z.userData.type==='horror'?2.5:z.userData.type==='mutant'?1.8:1.2;
+            if(dx*dx+dz*dz<hitR*hitR){z.userData.hp-=ZC.BULLET_DMG;b.userData.active=false;b.visible=false;
+                if(z.userData.hp<=0){playZombieDeath();S.zombieKills++;S.zombieTotalKills++;scene.remove(z);zombiePool.splice(j,1);vibrate(50);}
+                else playSfx(300,0.1,0.05);break;}
+        }
+        if(b.position.z<-ZC.SPAWN_DIST-20){b.userData.active=false;b.visible=false;}
+    }
+    // Wave complete
+    if(zombiePool.length===0&&S.zombieSpawnQueue.length===0&&S.zombieWaveActive&&!S.zombieBetweenWaves){
+        S.zombieWaveActive=false;S.zombieBetweenWaves=true;S.zombieBetweenTimer=3;
+        S.zombieHealth=Math.min(ZC.MAX_HEALTH,S.zombieHealth+15);
+        showTroll('Wave '+S.zombieWave+' hoàn thành! +15 HP',2500);playSfx(660,0.3,0.1);
+    }
+    if(S.zombieBetweenWaves){S.zombieBetweenTimer-=dt;if(S.zombieBetweenTimer<=0){S.zombieBetweenWaves=false;spawnZombieWave();}}
+    updateZombieHud();
+}
+
+function shootBullet(){
+    let bullet=null;
+    for(let i=0,n=bulletPool.length;i<n;i++){if(!bulletPool[i].userData.active){bullet=bulletPool[i];break;}}
+    if(!bullet){bullet=createBullet();scene.add(bullet);bulletPool.push(bullet);}
+    bullet.userData.active=true;bullet.visible=true;bullet.position.set(S.zombiePlayerX,1.2,-2);
+}
+
+function reloadZombie(){if(S.zombieReloading||S.zombieAmmoReserve<=0||S.zombieAmmo>=ZC.MAX_AMMO)return;S.zombieReloading=true;S.zombieReloadTimer=ZC.RELOAD_TIME;playSfx(400,0.1,0.05);}
+
+function updateZombieHud(){
+    if(healthFillEl)healthFillEl.style.width=(S.zombieHealth/ZC.MAX_HEALTH*100)+'%';
+    if(ammoHudEl)ammoHudEl.textContent=S.zombieAmmo+' / '+S.zombieAmmoReserve;
+    if(waveHudEl)waveHudEl.textContent='WAVE '+S.zombieWave;
+    if(killHudEl)killHudEl.textContent='Kills: '+S.zombieTotalKills;
+}
+
+function triggerZombieDeath(){
+    if(S.dead)return;S.dead=true;S.phase='dead';vibrate(300);playDamageThud();
+    try{if(typeof AndroidBridge!=='undefined'&&AndroidBridge.onGameDeath)AndroidBridge.onGameDeath(S.zombieWave,0,S.zombieTotalKills,0,S.timeAlive);}catch(e){}
+    if(S.zombieWave>S.zombieBestWave)S.zombieBestWave=S.zombieWave;
+    if(zombieDeathInfo)zombieDeathInfo.textContent='Wave: '+S.zombieWave+' | Kills: '+S.zombieTotalKills;
+    if(zombieDeathBest)zombieDeathBest.textContent='Kỷ lục: Wave '+S.zombieBestWave;
+    if(zombieDeathScr)zombieDeathScr.style.display='flex';
+    hudEl.style.display='none';zombieCtrlEl.style.display='none';hideZombieUI();showGameUI(false);
+}
+
+function showZombieUI(){
+    if(zombieCtrlEl)zombieCtrlEl.style.display='flex';
+    if(zombieHudEl)zombieHudEl.style.display='block';
+    if(healthBarEl)healthBarEl.style.display='block';
+    if(crosshairEl)crosshairEl.style.display='block';
+    if(crosshairDotEl)crosshairDotEl.style.display='block';
+    if(ammoHudEl)ammoHudEl.style.display='block';
+    if(waveHudEl)waveHudEl.style.display='block';
+    if(killHudEl)killHudEl.style.display='block';
+}
+function hideZombieUI(){
+    if(zombieCtrlEl)zombieCtrlEl.style.display='none';
+    if(zombieHudEl)zombieHudEl.style.display='none';
+    if(healthBarEl)healthBarEl.style.display='none';
+    if(crosshairEl)crosshairEl.style.display='none';
+    if(crosshairDotEl)crosshairDotEl.style.display='none';
+    if(ammoHudEl)ammoHudEl.style.display='none';
+    if(waveHudEl)waveHudEl.style.display='none';
+    if(killHudEl)killHudEl.style.display='none';
+}
+
 /* ───────────────────────────────────────────
    GAME LOOP
    ─────────────────────────────────────────── */
@@ -1259,39 +1461,36 @@ function gameLoop(now, token){
     }
 
     if(S.phase!=='playing'||S.paused){
-        if(S.phase==='dead'||S.phase==='easter') {
-            try { renderer.render(scene,cam); } catch(e){}
-        }
+        if(S.phase==='dead'||S.phase==='easter') { try{renderer.render(scene,cam);}catch(e){} }
         return;
     }
+    // v0.9: FPS limit
+    if(S.fpsLimit===1){if(gameLoop._last30&&now-gameLoop._last30<33)return;gameLoop._last30=now;}
+    else if(S.fpsLimit===2){if(gameLoop._last60&&now-gameLoop._last60<16)return;gameLoop._last60=now;}
 
     let dt;
     try { dt = Math.min(clock.getDelta(), 0.06); }
     catch(e){ dt = 0.016; }
     if(!isFinite(dt) || dt <= 0) dt = 0.016;
 
-    updateCar(dt);
-    checkRoad(dt);
-    checkObstacles();
-    checkCoins();
-    checkForkBarrier();
-    S.dist+=S.speed*dt/C.KM;
-    S.totalKm += S.speed*dt/C.KM;
-    S.timeAlive += dt;
-    if(S.speed > S.topSpeed) S.topSpeed = S.speed;
-    S.speedSamples++;
-    S.avgSpeed = (S.avgSpeed * (S.speedSamples-1) + S.speed) / S.speedSamples;
-    if(S.dist>S.bestDist) S.bestDist=S.dist;
-    checkForkWarning();
-    updateCamera();
-    recycleSegs(); recycleDeco(); recycleObs(); recycleCoins();
-    if(dustPts) updateDust(dt);
-    updateTrolls(dt);
-    updateShake(dt);
-    updateBoost(dt);
-    updateHUD(dt);
-    updateMusicPoll();
-    updateAudio();
+    if(GameMode==='zombie'){
+        updateZombieMode(dt);
+        cam.position.set(S.zombiePlayerX,1.7,0);cam.lookAt(S.zombiePlayerX,1.5,-20);
+        if(zombiePlayerMesh)zombiePlayerMesh.position.set(S.zombiePlayerX,1.7,0);
+        updateZombieHud();
+        if(tmrH)tmrH.textContent=Math.floor(S.timeAlive/60)+':'+(Math.floor(S.timeAlive)%60<10?'0':'')+Math.floor(S.timeAlive)%60;
+    } else {
+        updateCar(dt);checkRoad(dt);checkObstacles();checkCoins();checkForkBarrier();
+        S.dist+=S.speed*dt/C.KM;S.totalKm+=S.speed*dt/C.KM;
+        if(S.speed>S.topSpeed)S.topSpeed=S.speed;
+        S.speedSamples++;S.avgSpeed=(S.avgSpeed*(S.speedSamples-1)+S.speed)/S.speedSamples;
+        if(S.dist>S.bestDist)S.bestDist=S.dist;
+        checkForkWarning();updateCamera();
+        recycleSegs();recycleDeco();recycleObs();recycleCoins();
+        if(dustPts)updateDust(dt);
+        updateTrolls(dt);updateShake(dt);updateBoost(dt);updateHUD(dt);
+    }
+    updateMusicPoll();updateAudio();
     // v0.7: push game state to Lua VM (was missing entirely)
     updateLuaState();
     if(Date.now()-S.t0>=C.EASTER_MS) triggerEaster();
@@ -1575,6 +1774,17 @@ const TROLL_MESSAGES = [
     'Cảnh báo: Xe của bạn sắp hết... ảo giác',
     'Mẹo: Đừng đâm vào rào chắn (ai cũng biết)',
     'Bạn có muốn mua DLC "Sa Mạc Mùa Đông" không?',
+    'Đang tải quảng cáo... Ảo!',
+    'Xe của bạn vừa được nâng cấp! ...À, không',
+    'Bạn vừa trúng jackpot! ...Tiền ảo',
+    'Cảnh báo: Hacker đang theo dõi bạn... ảo',
+    'Đường phía trước có trạm xăng! ...Năm 2099',
+    'Bạn đã chơi quá lâu! ...Ai quan tâm?',
+    'Server đang bảo trì... à, game offline mà',
+    'Bạn có muốn xem video ads để nhận 2x? ...Ảo',
+    'Đang kết nối WiFi... sa mạc không có WiFi',
+    'Bạn đã unlock skin "Lạc đà vàng"! ...À, trololol',
+    'Game sẽ restart trong 3... 2... 1... À không',
 ];
 
 const ACHIEVEMENTS = [
@@ -1608,6 +1818,7 @@ let trollTimer=0;
 let nextTrollAt=15;
 
 function updateTrolls(dt){
+    if(S.trollLevel===0)return;
     trollTimer+=dt;
 
     if(S.controlsReversed){
@@ -1638,7 +1849,7 @@ function updateTrolls(dt){
 
     if(trollTimer>=nextTrollAt && S.trollCooldown<=0){
         triggerRandomTroll();
-        nextTrollAt=trollTimer+12+Math.random()*25;
+        nextTrollAt=trollTimer+(S.trollLevel===2?8+Math.random()*15:12+Math.random()*25);
         S.trollCooldown=3;
     }
     if(S.trollCooldown>0) S.trollCooldown-=dt;
@@ -1822,7 +2033,8 @@ function showAchievement(title, msg){
    GAME STATE
    ─────────────────────────────────────────── */
 function startGame(){
-    // v0.7: if init failed, do nothing — the error overlay is already shown.
+    GameMode=_selectedMode||'desert';
+    // v0.9: mode selection
     if(initFailed){
         return;
     }
@@ -1858,15 +2070,10 @@ function startGameAfterMusic(musicPicked){
     }
     $('welcomeScreen').style.display='none';
     if(musicPrompt) musicPrompt.style.display='none';
-    canvas.style.display='block';
-    hudEl.style.display='block';
-    ctrlEl.style.display='block';
-    // v0.8 FIX: show the gameplay UI buttons that were previously
-    // never displayed (pauseBtn, settingsBtn, cameraModeBtn, boostBar,
-    // speedoWrap). Without this call the player could not pause,
-    // open settings, change camera, see the boost bar or the
-    // speedometer during gameplay.
-    showGameUI(true);
+    canvas.style.display='block'; hudEl.style.display='block';
+    if(GameMode==='desert'){ctrlEl.style.display='block';showGameUI(true);hideZombieUI();}
+    else{zombieCtrlEl.style.display='flex';showZombieUI();showGameUI(true);}
+    // v0.9: mode-aware UI
     S.phase='playing';
     S.dead=false;
     S.paused=false;
@@ -1890,6 +2097,21 @@ function startGameAfterMusic(musicPicked){
     // brief window where the engine is ducked but no music is audible.
     S.musicPlaying = false;
     trollTimer=0;nextTrollAt=15;S.trollCooldown=0;
+    // v0.9: zombie mode init
+    if(GameMode==='zombie'){
+        if(carGroup)carGroup.visible=false;
+        S.zombieHealth=ZC.MAX_HEALTH;S.zombieAmmo=ZC.MAX_AMMO;
+        S.zombieAmmoReserve=120;S.zombieWave=0;S.zombieKills=0;S.zombieTotalKills=0;
+        S.zombieReloading=false;S.zombieWaveActive=false;S.zombieBetweenWaves=false;
+        S.zombiePlayerX=0;S.zombieSpawnQueue=[];
+        zombiePool.forEach(z=>{scene.remove(z);});zombiePool.length=0;
+        bulletPool.forEach(b=>{b.userData.active=false;b.visible=false;});
+        if(boostBar)boostBar.style.display='none';
+        if(speedoWrap)speedoWrap.style.display='none';
+        setTimeout(()=>spawnZombieWave(),1000);
+    } else {
+        if(carGroup)carGroup.visible=true;
+    }
 
     const r=carGroup.rotation.y;
     cam.position.set(
@@ -1994,7 +2216,7 @@ function triggerDeath(){
 function triggerEaster(){
     S.phase='easter';
     eastScr.style.display='flex';
-    hudEl.style.display='none';ctrlEl.style.display='none';
+    hudEl.style.display='none';ctrlEl.style.display='none';zombieCtrlEl.style.display='none';hideZombieUI();
     offVig.style.display='none';revInd.style.display='none';
     fakeNotif.style.display='none';trollPop.style.display='none';msBanner.style.display='none';
 }
@@ -2029,6 +2251,7 @@ function restart(){
     if(rotateTimeout){clearTimeout(rotateTimeout);rotateTimeout=null; document.body.style.transform='';}
     if(curseTimeout){clearTimeout(curseTimeout);curseTimeout=null;}
     if(curseTimeout2){clearTimeout(curseTimeout2);curseTimeout2=null;}
+    if(waveAnnounceTimeout){clearTimeout(waveAnnounceTimeout);waveAnnounceTimeout=null;}
 
     carGroup.position.set(0,0,0);
     carGroup.rotation.y=0;
@@ -2056,9 +2279,9 @@ function restart(){
     cam.position.set(0, C.CAM_H, C.CAM_DIST);
     cam.lookAt(0, 1.5, 0);
 
-    deathScr.style.display='none';eastScr.style.display='none';pauseScr.style.display='none';
-    hudEl.style.display='block';ctrlEl.style.display='block';
-    // v0.8: re-show gameplay UI buttons on restart too.
+    deathScr.style.display='none';eastScr.style.display='none';pauseScr.style.display='none';zombieDeathScr.style.display='none';
+    if(GameMode==='desert'){hudEl.style.display='block';ctrlEl.style.display='block';zombieCtrlEl.style.display='none';hideZombieUI();}
+    else{hudEl.style.display='block';zombieCtrlEl.style.display='flex';showZombieUI();S.zombieHealth=ZC.MAX_HEALTH;S.zombieAmmo=ZC.MAX_AMMO;S.zombieAmmoReserve=120;S.zombieWave=0;S.zombieKills=0;S.zombieTotalKills=0;S.zombieReloading=false;S.zombieWaveActive=false;S.zombieBetweenWaves=false;S.zombiePlayerX=0;S.zombieSpawnQueue=[];zombiePool.forEach(z=>{scene.remove(z);});zombiePool.length=0;bulletPool.forEach(b=>{b.userData.active=false;b.visible=false;});setTimeout(()=>spawnZombieWave(),1000);}
     showGameUI(true);
     offVig.style.display='none';revInd.style.display='none';
     fakeNotif.style.display='none';trollPop.style.display='none';msBanner.style.display='none';
@@ -2077,18 +2300,15 @@ function resetInput(){
 window.pauseGame=function(){
     if(S.phase==='playing'&&!S.paused){
         S.paused=true;
-        pauseScr.style.display='flex';
-        hudEl.style.display='none';
-        ctrlEl.style.display='none';
+        pauseScr.style.display='flex';hudEl.style.display='none';ctrlEl.style.display='none';zombieCtrlEl.style.display='none';
         if(audioCtx) audioCtx.suspend();
     }
 };
 window.resumeGame=function(){
     if(S.paused){
         S.paused=false;
-        pauseScr.style.display='none';
-        hudEl.style.display='block';
-        ctrlEl.style.display='block';
+        pauseScr.style.display='none';hudEl.style.display='block';
+        if(GameMode==='desert')ctrlEl.style.display='block';else zombieCtrlEl.style.display='flex';
         clock.start();
         if(audioCtx) audioCtx.resume();
     }

@@ -4,7 +4,6 @@
     <string name="loading_text">Đang tải...</string>
     <string name="welcome_text">Chào mừng bạn đến với game của Hieu Louis</string>
     <string name="play_button">Chơi ngay</string>
-    <!-- v0.6 strings -->
     <string name="music_prompt_title">Phát nhạc khi chơi?</string>
     <string name="music_prompt_subtitle">Chọn nhạc từ điện thoại</string>
     <string name="music_yes">Có, mở nhạc</string>
@@ -16,4 +15,9 @@
     <string name="settings_debug">Bật/Tắt debug</string>
     <string name="music_channel_name">Sa Mạc Ảo Giác Music</string>
     <string name="music_channel_desc">Background music player</string>
+    <!-- v0.9: Game modes -->
+    <string name="mode_desert">Sa Mạc</string>
+    <string name="mode_zombie">Zombie</string>
+    <string name="mode_desert_desc">Đua xe trên sa mạc, tránh chướng ngại vật</string>
+    <string name="mode_zombie_desc">Bắn súng sinh tồn, sống sót qua từng đợt</string>
 </resources>
