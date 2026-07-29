@@ -8,17 +8,40 @@
     <title>Sa Mạc Ảo Giác</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
-        html,body{width:100%;height:100%;overflow:hidden;background:#111;font-family:'Segoe UI',system-ui,sans-serif;touch-action:none}
+        html,body{width:100%;height:100%;overflow:hidden;background:#111;font-family:'Segoe UI',system-ui,sans-serif;touch-action:none;transition:transform .3s,filter .3s}
         canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1}
         /* ── HUD ── */
-        #hud{position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;pointer-events:none;display:none}
+        #hud{position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;pointer-events:none;transition:opacity .3s}
         .hud-box{position:absolute;color:#fff;font-weight:700;text-shadow:0 2px 8px rgba(0,0,0,.9);background:rgba(0,0,0,.4);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border-radius:16px}
         #speedHud{top:10px;left:50%;transform:translateX(-50%);font-size:16px;padding:6px 16px;letter-spacing:1px}
         #distHud{top:10px;right:14px;font-size:14px;padding:5px 12px;color:#fbbf24}
         #timerHud{top:10px;left:14px;font-size:12px;padding:4px 10px;color:#94a3b8}
+        #topSpeedHud{top:38px;right:14px;font-size:11px;padding:3px 10px;color:#94a3b8}
+        #totalKmHud{top:54px;right:14px;font-size:11px;padding:3px 10px;color:#94a3b8}
+        #fpsHud{top:38px;left:14px;font-size:11px;padding:3px 10px;color:#94a3b8}
+        /* ── COIN COUNTER ── */
+        #coinCounter{position:absolute;top:10px;left:50%;transform:translateX(-50%) translateY(40px);color:#fbbf24;font-size:13px;font-weight:800;text-shadow:0 2px 6px rgba(0,0,0,.9);background:rgba(17,24,39,.6);padding:4px 12px;border-radius:10px;z-index:11}
+        /* ── SPEEDOMETER DIAL ── */
+        #speedoWrap{position:absolute;bottom:100px;right:24px;width:80px;height:80px;z-index:11;pointer-events:none;display:none}
+        #speedoDial{position:absolute;top:0;left:50%;width:3px;height:38px;background:#fbbf24;transform-origin:50% 100%;transform:rotate(-120deg);border-radius:2px;box-shadow:0 0 6px rgba(251,191,36,.6)}
+        #speedoBg{width:80px;height:80px;border-radius:50%;background:rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.2);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);position:relative;overflow:hidden}
+        #speedoBg::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;background:#fbbf24;border-radius:50%}
+        /* ── BOOST BAR ── */
+        #boostBar{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);width:140px;height:6px;background:rgba(0,0,0,.4);border-radius:3px;z-index:11;display:none;overflow:hidden;border:1px solid rgba(255,255,255,.15)}
+        #boostFill{width:0%;height:100%;background:linear-gradient(90deg,#22c55e,#f59e0b);transition:width .15s ease-out}
+        #boostLabel{position:absolute;bottom:108px;left:50%;transform:translateX(-50%);font-size:9px;color:#94a3b8;z-index:11;letter-spacing:1px}
         /* ── PAUSE BUTTON ── */
-        #pauseBtn{position:absolute;top:10px;right:14px;top:50px;right:14px;z-index:15;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.4);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border:2px solid rgba(255,255,255,.2);display:none;align-items:center;justify-content:center;color:rgba(255,255,255,.7);font-size:16px;cursor:pointer;pointer-events:auto}
+        #pauseBtn{position:absolute;top:50px;right:14px;z-index:15;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.4);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border:2px solid rgba(255,255,255,.2);display:none;align-items:center;justify-content:center;color:rgba(255,255,255,.7);font-size:16px;cursor:pointer;pointer-events:auto}
         #pauseBtn:active{background:rgba(255,255,255,.2);transform:scale(.9)}
+        /* ── SETTINGS BUTTON ── */
+        #settingsBtn{position:absolute;top:50px;right:62px;z-index:15;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.4);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border:2px solid rgba(255,255,255,.2);display:none;align-items:center;justify-content:center;color:rgba(255,255,255,.7);font-size:16px;cursor:pointer;pointer-events:auto}
+        #settingsBtn:active{background:rgba(255,255,255,.2);transform:scale(.9)}
+        /* ── CAMERA MODE BUTTON ── */
+        #cameraModeBtn{position:absolute;top:50px;right:110px;z-index:15;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.4);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border:2px solid rgba(255,255,255,.2);display:none;align-items:center;justify-content:center;color:rgba(255,255,255,.7);font-size:18px;cursor:pointer;pointer-events:auto}
+        #cameraModeBtn:active{background:rgba(255,255,255,.2);transform:scale(.9)}
+        /* ── MUSIC INDICATOR ── */
+        #musicIndicator{position:absolute;top:50px;left:14px;z-index:15;display:none;align-items:center;background:rgba(17,24,39,.7);color:#e2e8f0;font-size:11px;padding:6px 12px;border-radius:14px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.1);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        #musicToggleBtn{margin-left:8px;color:#f59e0b;cursor:pointer;font-size:14px;padding:0 4px}
         /* ── OFF-ROAD VIGNETTE ── */
         #offroadVignette{position:absolute;top:0;left:0;width:100%;height:100%;z-index:8;pointer-events:none;display:none;background:radial-gradient(ellipse at center,transparent 40%,rgba(220,38,38,.35) 100%);animation:vigPulse .8s ease-in-out infinite}
         @keyframes vigPulse{0%,100%{opacity:.7}50%{opacity:1}}
@@ -27,6 +50,8 @@
         .cb{pointer-events:auto;position:absolute;width:66px;height:66px;border-radius:33px;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:24px;color:rgba(255,255,255,.65);transition:background .06s,transform .06s}
         .cb.on{background:rgba(255,255,255,.28);border-color:rgba(255,255,255,.45);color:#fff;transform:scale(.92)}
         #bL{bottom:24px;left:16px}#bR{bottom:24px;left:88px}#bG{bottom:24px;right:16px}#bB{bottom:24px;right:88px}
+        #bBoost{bottom:94px;right:52px;width:48px;height:48px;font-size:20px;background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.4);color:#f59e0b}
+        #bBoost.on{background:rgba(245,158,11,.4);color:#fff}
         /* ── SCREEN SHAKE ── */
         #shakeWrap{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0}
         /* ── WELCOME ── */
@@ -38,12 +63,21 @@
         .play-btn{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:18px;font-weight:800;padding:13px 48px;border-radius:28px;border:none;letter-spacing:3px;box-shadow:0 4px 24px rgba(245,158,11,.4);animation:pulse 2s ease-in-out infinite;cursor:pointer}
         .play-btn:active{transform:scale(.94)}
         @keyframes pulse{0%,100%{box-shadow:0 4px 24px rgba(245,158,11,.4)}50%{box-shadow:0 6px 36px rgba(245,158,11,.7)}}
+        /* ── MUSIC PROMPT ── */
+        #musicPrompt{position:absolute;top:0;left:0;width:100%;height:100%;z-index:110;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.85);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:32px}
+        .mp-title{color:#f59e0b;font-size:22px;font-weight:800;letter-spacing:2px;margin-bottom:12px;text-align:center}
+        .mp-sub{color:#cbd5e1;font-size:13px;margin-bottom:28px;text-align:center;line-height:1.6;padding:0 16px}
+        .mp-btns{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+        .mp-btn{font-size:15px;font-weight:700;padding:12px 32px;border-radius:24px;border:none;letter-spacing:1px;cursor:pointer;min-width:130px}
+        .mp-yes{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff}
+        .mp-no{background:rgba(255,255,255,.1);color:#e2e8f0;border:1px solid rgba(255,255,255,.2)}
+        .mp-btn:active{transform:scale(.94)}
         /* ── DEATH ── */
-        #deathScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.88);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+        #deathScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.88);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:24px}
         .d-t{color:#ef4444;font-size:28px;font-weight:800;letter-spacing:2px;margin-bottom:10px}
-        .d-d{color:#fbbf24;font-size:18px;margin-bottom:8px;text-align:center;padding:0 20px;line-height:1.5}
+        .d-d{color:#fbbf24;font-size:14px;margin-bottom:8px;text-align:center;padding:0 16px;line-height:1.5}
         .d-best{color:#94a3b8;font-size:13px;margin-bottom:20px}
-        .d-b{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;font-size:16px;font-weight:700;padding:11px 40px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer}
+        .d-b{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;font-size:16px;font-weight:700;padding:11px 40px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer;margin-top:8px}
         .d-b:active{transform:scale(.94)}
         /* ── EASTER ── */
         #easterScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:300;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
@@ -56,6 +90,18 @@
         .p-btn:active{transform:scale(.94)}
         .p-btn2{background:rgba(255,255,255,.1);color:#e2e8f0;font-size:14px;font-weight:600;padding:10px 40px;border-radius:24px;border:1px solid rgba(255,255,255,.2);cursor:pointer;min-width:200px}
         .p-btn2:active{transform:scale(.94)}
+        /* ── SETTINGS ── */
+        #settingsScr{position:absolute;top:0;left:0;width:100%;height:100%;z-index:260;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.9);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:24px}
+        .s-title{color:#fbbf24;font-size:22px;font-weight:800;letter-spacing:2px;margin-bottom:24px}
+        .s-btn{background:rgba(255,255,255,.1);color:#e2e8f0;font-size:14px;font-weight:600;padding:11px 36px;border-radius:22px;border:1px solid rgba(255,255,255,.2);cursor:pointer;margin-bottom:10px;min-width:240px}
+        .s-btn:active{transform:scale(.94)}
+        .s-section{color:#94a3b8;font-size:11px;letter-spacing:1.5px;margin-top:14px;margin-bottom:6px;text-transform:uppercase}
+        .s-cheat{display:flex;gap:8px;margin-top:14px;width:100%;max-width:300px}
+        .s-cheat input{flex:1;padding:9px 14px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.15);color:#fff;font-size:13px;border-radius:18px;outline:none}
+        .s-cheat input:focus{border-color:#f59e0b}
+        .s-cheat button{padding:9px 16px;background:#f59e0b;color:#111;border:none;border-radius:18px;font-weight:700;font-size:13px;cursor:pointer}
+        .s-cheat button:active{transform:scale(.94)}
+        .s-cheat-hint{color:#64748b;font-size:10px;margin-top:8px;text-align:center;width:100%;max-width:300px}
         /* ── TROLL POPUPS ── */
         #trollPopup{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);z-index:50;display:none;pointer-events:none;text-align:center;animation:trollIn .3s ease-out}
         @keyframes trollIn{0%{opacity:0;transform:translateX(-50%) scale(.7)}100%{opacity:1;transform:translateX(-50%) scale(1)}}
@@ -76,6 +122,8 @@
         @keyframes msIn{0%{opacity:0;transform:scale(.6)}100%{opacity:1;transform:scale(1)}}
         .ms-km{color:#fbbf24;font-size:18px;font-weight:800}
         .ms-msg{color:#e2e8f0;font-size:12px;margin-top:4px}
+        /* ── DEBUG OVERLAY ── */
+        #debugOverlay{position:absolute;top:0;left:0;background:rgba(0,0,0,.8);color:#22c55e;font-family:monospace;font-size:10px;padding:8px;line-height:1.4;z-index:90;display:none;pointer-events:none;white-space:pre;border-radius:0 0 6px 0}
         /* ── REDUCED MOTION (a11y) ── */
         @media (prefers-reduced-motion: reduce){
             *{animation-duration:0.01ms!important;transition-duration:0.01ms!important}
@@ -90,18 +138,30 @@
         <div class="hud-box" id="speedHud">0 km/h</div>
         <div class="hud-box" id="distHud">0.00 km</div>
         <div class="hud-box" id="timerHud">0:00</div>
+        <div class="hud-box" id="topSpeedHud">Top: 0 km/h</div>
+        <div class="hud-box" id="totalKmHud">Σ 0.00 km</div>
+        <div class="hud-box" id="fpsHud">60 FPS</div>
     </div>
+    <div id="coinCounter">🪙 0</div>
+    <div id="boostLabel">BOOST</div>
+    <div id="boostBar"><div id="boostFill"></div></div>
+    <div id="speedoWrap"><div id="speedoBg"></div><div id="speedoDial"></div></div>
     <div id="pauseBtn">⏸</div>
+    <div id="settingsBtn">⚙</div>
+    <div id="cameraModeBtn">📷</div>
+    <div id="musicIndicator"><span id="musicTrackName">♪ Music</span><span id="musicToggleBtn">⏸</span></div>
     <div id="controls">
         <div class="cb" id="bL">◀</div>
         <div class="cb" id="bR">▶</div>
         <div class="cb" id="bG">▲</div>
         <div class="cb" id="bB">▼</div>
+        <div class="cb" id="bBoost">⚡</div>
     </div>
     <div id="reverseIndicator">⚠ ĐIỀU KHIỂN ĐẢO NGƯỢC!</div>
     <div id="trollPopup"><div class="t-box" id="trollBox"></div></div>
     <div id="fakeNotif"><span id="fakeNotifText"></span></div>
     <div id="milestoneBanner"><div class="ms-box"><div class="ms-km" id="msKm"></div><div class="ms-msg" id="msMsg"></div></div></div>
+    <div id="debugOverlay"></div>
 
     <!-- Welcome -->
     <div id="welcomeScreen">
@@ -111,6 +171,17 @@
         <div class="w-msg">Chào mừng bạn đến với game của Hieu Louis</div>
         <button class="play-btn" id="playBtn" aria-label="Bắt đầu chơi">CHƠI NGAY</button>
     </div>
+
+    <!-- Music Prompt -->
+    <div id="musicPrompt" role="dialog" aria-label="Phát nhạc">
+        <div class="mp-title">🎵 PHÁT NHẠC KHI CHƠI?</div>
+        <div class="mp-sub">Chọn nhạc từ điện thoại — tiếng động cơ sẽ tự nhỏ lại.<br><small>(Bạn có thể đổi ý sau trong cài đặt)</small></div>
+        <div class="mp-btns">
+            <button class="mp-btn mp-yes" id="musicYes">✓ CÓ, MỞ NHẠC</button>
+            <button class="mp-btn mp-no" id="musicNo">✗ KHÔNG, CẢM ƠN</button>
+        </div>
+    </div>
+
     <!-- Death -->
     <div id="deathScreen" role="dialog" aria-label="Game Over">
         <div class="d-t">XE ĐÃ HỎNG!</div>
@@ -128,6 +199,21 @@
         <div class="p-title">TẠM DỪNG</div>
         <button class="p-btn" id="resumeBtn" aria-label="Tiếp tục">TIẾP TỤC</button>
         <button class="p-btn2" id="quitBtn" aria-label="Thoát">THOÁT</button>
+    </div>
+    <!-- Settings -->
+    <div id="settingsScr" role="dialog" aria-label="Cài đặt">
+        <div class="s-title">⚙ CÀI ĐẶT</div>
+        <button class="s-btn" id="toggleSound">🔊 Bật/Tắt âm thanh</button>
+        <button class="s-btn" id="toggleHud">📊 Bật/Tắt HUD</button>
+        <button class="s-btn" id="toggleDebug">🐛 Bật/Tắt debug</button>
+        <button class="s-btn" id="cameraModeBtn" style="display:none"></button>
+        <div class="s-section">CHEAT CODES</div>
+        <div class="s-cheat">
+            <input type="text" id="cheatInput" placeholder="ghost / fly / big / small / reset / coin / speed" autocomplete="off">
+            <button id="cheatSubmit">OK</button>
+        </div>
+        <div class="s-cheat-hint">Hoặc gõ: iddqd, trololol, Konami (↑↑↓↓←→←→ba)</div>
+        <button class="s-btn" id="settingsClose" style="margin-top:24px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-weight:700">ĐÓNG</button>
     </div>
 
     <script src="three.min.js"></script>

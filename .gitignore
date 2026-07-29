@@ -45,6 +45,9 @@ captures/
 
 # External native build folder generated in Android Studio 2.2 and above
 .externalNativeBuild/
+# v0.6: NDK build outputs
+.cxx/
+app/src/main/jniLibs/
 
 # Google Services (play-services.json)
 google-services.json

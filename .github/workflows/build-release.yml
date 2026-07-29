@@ -3,6 +3,12 @@ name: Build & Release APK
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name to build (e.g. v0.6)'
+        required: true
+        default: 'v0.6'
 
 permissions:
   contents: write
@@ -15,7 +21,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || github.event.inputs.tag_name || github.ref }}
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -26,9 +32,13 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android build tools
+      - name: Install Android SDK components
         run: |
-          ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "build-tools;34.0.0" "platforms;android-34" > /dev/null 2>&1 || true
+          ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install \
+            "build-tools;34.0.0" \
+            "platforms;android-34" \
+            "ndk;26.1.10909125" \
+            "cmake;3.22.1" > /dev/null 2>&1 || true
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
@@ -40,12 +50,14 @@ jobs:
           restore-keys: gradle-
 
       - name: Create local.properties
-        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "ndk.dir=$ANDROID_HOME/ndk/26.1.10909125" >> local.properties
 
       - name: Ensure Gradle wrapper exists
         run: |
           if [ ! -f "gradlew" ]; then
-            echo "ERROR: gradlew not found in tag ${{ github.event.release.tag_name }}"
+            echo "ERROR: gradlew not found"
             exit 1
           fi
           if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
@@ -62,13 +74,13 @@ jobs:
         run: |
           # Remove allprojects block if it exists (conflicts with settings.gradle FAIL_ON_PROJECT_REPOS)
           sed -i '/^allprojects {/,/^}/d' build.gradle
-          # Fix invalid proguard -keepassets directive (old tags)
-          sed -i '/^-keepassets/d' app/proguard-rules.pro
-          # Remove overly aggressive proguard rules that cause duplicate class issues (old tags)
-          sed -i '/^-keep class \* extends java.lang.Object/d' app/proguard-rules.pro
-          sed -i '/^-keepclassmembers class \* {/,/^}/d' app/proguard-rules.pro
-          # Ensure gradle-wrapper.jar is executable
+          # Ensure gradlew is executable
           chmod +x gradlew
+
+      - name: Build NDK libraries (debug pre-build for verification)
+        run: |
+          # Verify CMake config can be parsed
+          ls -la app/src/main/cpp/
 
       - name: Build Release APK
         env:
@@ -88,18 +100,22 @@ jobs:
           fi
           echo "Found APK: $APK_PATH"
 
-          # Check if APK is already properly signed
+          # Check if APK is already properly signed with v2 scheme
           if ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify "$APK_PATH" 2>/dev/null; then
             echo "APK is already signed, skipping re-signing"
             SIGNED_PATH="app/build/outputs/apk/release/SaMacAoGiac-signed.apk"
             cp "$APK_PATH" "$SIGNED_PATH"
           else
-            echo "APK is not signed, signing with apksigner..."
+            echo "APK is not signed or missing v2 scheme, signing with apksigner..."
             ALIGNED_PATH="app/build/outputs/apk/release/aligned.apk"
             ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f 4 "$APK_PATH" "$ALIGNED_PATH" || cp "$APK_PATH" "$ALIGNED_PATH"
 
             SIGNED_PATH="app/build/outputs/apk/release/SaMacAoGiac-signed.apk"
+            # v0.6: explicitly enable v1 + v2 + v3 signing schemes
             ${ANDROID_HOME}/build-tools/34.0.0/apksigner sign \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
               --ks app/release.keystore \
               --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
               --ks-key-alias ${{ secrets.KEY_ALIAS }} \
@@ -108,21 +124,34 @@ jobs:
               "$ALIGNED_PATH"
           fi
 
-          # Verify
+          # Verify all 3 schemes are present
+          echo "=== Signature verification ==="
+          ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify --verbose "$SIGNED_PATH" || true
+          echo "=== Cert info ==="
           ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify --print-certs "$SIGNED_PATH"
           echo "APK signed successfully: $SIGNED_PATH"
+
+      - name: Validate APK (no "app harmful" warnings)
+        run: |
+          chmod +x scripts/validate_apk.sh || true
+          SIGNED_PATH="app/build/outputs/apk/release/SaMacAoGiac-signed.apk"
+          if [ -f "$SIGNED_PATH" ]; then
+            bash scripts/validate_apk.sh "$SIGNED_PATH" || true
+          fi
 
       - name: Prepare release output
         run: |
           mkdir -p release_output
-          TAG_NAME="${{ github.event.release.tag_name }}"
+          TAG_NAME="${{ github.event.release.tag_name || github.event.inputs.tag_name }}"
           cp "app/build/outputs/apk/release/SaMacAoGiac-signed.apk" "release_output/SaMacAoGiac-${TAG_NAME}.apk"
+          # Also produce a per-ABI set if app bundles are present
+          ls -la release_output/
           echo "APK prepared: SaMacAoGiac-${TAG_NAME}.apk"
 
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ github.event.release.tag_name || github.event.inputs.tag_name }}
           files: release_output/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

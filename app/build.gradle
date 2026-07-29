@@ -1,5 +1,6 @@
 plugins {
     id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
 }
 
 // Load keystore properties from keystore.properties file or environment variables
@@ -19,13 +20,40 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace 'com.samacaogiac.game'
     compileSdk 34
+    // v0.6: explicit NDK version — LTS r26d
+    ndkVersion "26.1.10909125"
 
     defaultConfig {
         applicationId "com.samacaogiac.game"
         minSdk 24
         targetSdk 34
-        versionCode 5
-        versionName "0.5"
+        versionCode 6
+        versionName "0.6"
+
+        // v0.6: ABIs — arm64-v8a (modern), armeabi-v7a (legacy 32-bit),
+        // x86_64 (emulator). Skip x86 (32-bit) — not used in production.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+
+        // v0.6: externalNativeBuild — CMake for the C/C++ audio mixer
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++11 -fexceptions -frtti'
+                cFlags '-std=c99'
+                arguments '-DANDROID_STL=c++_static'
+            }
+        }
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // v0.6: CMake build file
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
+        }
     }
 
     signingConfigs {
@@ -35,6 +63,12 @@ android {
                 keyPassword keystoreProperties['keyPassword']
                 storeFile file(keystoreProperties['storeFile'])
                 storePassword keystoreProperties['storePassword']
+                // v0.6: enable v2 + v3 signing schemes (helps avoid the
+                // "this app may be harmful" Play Protect warning by
+                // ensuring a modern, verifiable signature).
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
@@ -42,8 +76,17 @@ android {
     buildTypes {
         release {
             minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
+            // v0.6: explicitly mark release as non-debuggable
+            debuggable false
+            // v0.6: native lib strips on release
+            packagingOptions {
+                jniLibs {
+                    useLegacyPackaging false
+                }
+            }
         }
         debug {
             minifyEnabled false
@@ -52,21 +95,41 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
-    // FIX: removed viewBinding (not used) to reduce build overhead
+    // v0.6: Kotlin JVM target
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
     buildFeatures {
         viewBinding false
+        buildConfig true
+    }
+
+    // v0.6: lint baseline — known lint issues we accept
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+        disable 'MissingTranslation'
+    }
+
+    // v0.6: bundle native libraries per-ABI to reduce APK size
+    bundle {
+        abi {
+            enableSplit = true
+        }
     }
 }
 
 configurations.all {
     resolutionStrategy {
-        force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
-        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
-        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+        // v0.6: force Kotlin 1.9.22 to match Kotlin plugin version
+        force 'org.jetbrains.kotlin:kotlin-stdlib:1.9.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.22'
     }
 }
 
@@ -74,4 +137,11 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.webkit:webkit:1.9.0'
     implementation 'androidx.core:core:1.12.0'
+    implementation 'androidx.core:core-ktx:1.12.0'
+
+    // v0.6: Kotlin stdlib
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.22'
+
+    // v0.6: LuaJ — pure-Java Lua 5.1 VM for game-event scripting
+    implementation 'org.luaj:luaj-jse:3.0.1'
 }

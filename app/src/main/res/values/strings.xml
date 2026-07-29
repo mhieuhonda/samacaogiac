@@ -4,4 +4,16 @@
     <string name="loading_text">Đang tải...</string>
     <string name="welcome_text">Chào mừng bạn đến với game của Hieu Louis</string>
     <string name="play_button">Chơi ngay</string>
+    <!-- v0.6 strings -->
+    <string name="music_prompt_title">Phát nhạc khi chơi?</string>
+    <string name="music_prompt_subtitle">Chọn nhạc từ điện thoại</string>
+    <string name="music_yes">Có, mở nhạc</string>
+    <string name="music_no">Không, cảm ơn</string>
+    <string name="settings_title">Cài đặt</string>
+    <string name="settings_close">Đóng</string>
+    <string name="settings_sound">Bật/Tắt âm thanh</string>
+    <string name="settings_hud">Bật/Tắt HUD</string>
+    <string name="settings_debug">Bật/Tắt debug</string>
+    <string name="music_channel_name">Sa Mạc Ảo Giác Music</string>
+    <string name="music_channel_desc">Background music player</string>
 </resources>

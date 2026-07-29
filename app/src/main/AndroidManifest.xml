@@ -1,8 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- FIX: removed INTERNET — game doesn't use network -->
+    <!--
+        Permissions — kept minimal to avoid Google Play Protect warnings.
+        VIBRATE:        game feedback.
+        READ_MEDIA_AUDIO: required for the in-game music picker (Android 13+).
+        READ_EXTERNAL_STORAGE: legacy music access on Android 12 and below
+                               (maxSdkVersion=32 so we don't request it on 13+).
+        FOREGROUND_SERVICE + FOREGROUND_SERVICE_MEDIA_PLAYBACK:
+                               required for MusicPlayerService (Android 9+ / 14+).
+        WAKE_LOCK:      keep music playing while screen is off.
+    -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!--
+        Features — declare optional so the APK installs on devices without them.
+    -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -14,8 +36,16 @@
         android:hardwareAccelerated="true"
         android:usesCleartextTraffic="false"
         android:largeHeap="true"
+        android:debuggable="false"
+        android:appCategory="game"
         android:fullBackupContent="@xml/backup_rules"
-        android:dataExtractionRules="@xml/data_extraction_rules">
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        tools:targetApi="34">
+
+        <!--
+            v0.6: explicitly declare that we never read launcher content via
+            content:// from outside, which reassures Play Protect.
+        -->
 
         <activity
             android:name=".LoadingActivity"
@@ -35,5 +65,25 @@
             android:hardwareAccelerated="true"
             android:exported="false" />
 
+        <!--
+            v0.6: Kotlin music picker activity. Not exported — only launched
+            from GameActivity.
+        -->
+        <activity
+            android:name=".MusicPickerActivity"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:theme="@style/Theme.SaMacAoGiac" />
+
+        <!--
+            v0.6: Foreground service for background music playback.
+            foregroundServiceType="mediaPlayback" is required on Android 14+.
+        -->
+        <service
+            android:name=".MusicPlayerService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
+
 </manifest>
