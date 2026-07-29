@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Sa Mạc Ảo Giác</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+        html,body{width:100%;height:100%;overflow:hidden;background:#1a1a2e;font-family:'Segoe UI',system-ui,sans-serif}
+        #gameCanvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;display:none}
+        #hud{position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;pointer-events:none;display:none}
+        #speedDisplay{position:absolute;top:12px;left:50%;transform:translateX(-50%);color:#fff;font-size:17px;font-weight:700;text-shadow:0 2px 8px rgba(0,0,0,.9);background:rgba(0,0,0,.45);padding:6px 18px;border-radius:20px;letter-spacing:1px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+        #distanceDisplay{position:absolute;top:12px;right:16px;color:#fbbf24;font-size:15px;font-weight:700;text-shadow:0 2px 8px rgba(0,0,0,.9);background:rgba(0,0,0,.45);padding:5px 14px;border-radius:16px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+        #forkWarning{position:absolute;top:50%;left:50%;transform:translate(-50%,-80%);color:#fbbf24;font-size:22px;font-weight:700;text-shadow:0 2px 12px rgba(0,0,0,.9);background:rgba(0,0,0,.6);padding:10px 24px;border-radius:16px;z-index:15;display:none;pointer-events:none;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:forkPulse 1s ease-in-out infinite}
+        @keyframes forkPulse{0%,100%{opacity:1}50%{opacity:.6}}
+        #controls{position:absolute;top:0;left:0;width:100%;height:100%;z-index:20;pointer-events:none;display:none}
+        .ctrl-btn{pointer-events:auto;position:absolute;width:68px;height:68px;border-radius:34px;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:26px;color:rgba(255,255,255,.7);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);transition:transform .08s}
+        .ctrl-btn.active,.ctrl-btn:active{background:rgba(255,255,255,.3);border-color:rgba(255,255,255,.5);color:rgba(255,255,255,.95);transform:scale(.93)}
+        #btnLeft{bottom:28px;left:18px}
+        #btnRight{bottom:28px;left:96px}
+        #btnGas{bottom:28px;right:18px}
+        #btnBrake{bottom:28px;right:96px}
+        #welcomeScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:100;display:flex;align-items:center;justify-content:center;flex-direction:column;background:linear-gradient(135deg,#0f0c29 0%,#302b63 50%,#24243e 100%)}
+        .w-logo{width:90px;height:90px;margin-bottom:24px;filter:drop-shadow(0 4px 20px rgba(245,158,11,.3))}
+        .w-title{color:#f59e0b;font-size:30px;font-weight:800;letter-spacing:5px;margin-bottom:8px;text-shadow:0 4px 20px rgba(245,158,11,.3)}
+        .w-sub{color:#94a3b8;font-size:13px;letter-spacing:3px;margin-bottom:32px;text-transform:uppercase}
+        .w-msg{color:#e2e8f0;font-size:17px;margin-bottom:36px;text-align:center;line-height:1.7;padding:0 28px}
+        .play-btn{background:linear-gradient(135deg,#f59e0b,#d97706);color:#1a1a2e;font-size:20px;font-weight:800;padding:14px 52px;border-radius:30px;border:none;cursor:pointer;letter-spacing:3px;box-shadow:0 4px 24px rgba(245,158,11,.4);animation:btnPulse 2s ease-in-out infinite}
+        .play-btn:active{transform:scale(.95);box-shadow:0 2px 12px rgba(245,158,11,.3)}
+        @keyframes btnPulse{0%,100%{box-shadow:0 4px 24px rgba(245,158,11,.4)}50%{box-shadow:0 4px 36px rgba(245,158,11,.65)}}
+        #deathScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.88);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+        .d-icon{font-size:52px;margin-bottom:16px}
+        .d-title{color:#ef4444;font-size:32px;font-weight:800;letter-spacing:2px;margin-bottom:12px}
+        .d-dist{color:#fbbf24;font-size:20px;margin-bottom:28px;line-height:1.6;text-align:center;padding:0 24px}
+        .d-btn{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;font-size:18px;font-weight:700;padding:12px 44px;border-radius:26px;border:none;cursor:pointer;letter-spacing:2px;box-shadow:0 4px 16px rgba(239,68,68,.4)}
+        .d-btn:active{transform:scale(.95)}
+        #easterEggScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:300;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+        .e-icon{font-size:56px;margin-bottom:16px}
+        .e-msg{color:#fbbf24;font-size:24px;font-weight:700;margin-bottom:24px;text-align:center;line-height:1.6;padding:0 28px}
+        .e-btn{background:linear-gradient(135deg,#f59e0b,#d97706);color:#1a1a2e;font-size:18px;font-weight:700;padding:12px 44px;border-radius:26px;border:none;cursor:pointer;letter-spacing:2px}
+        .e-btn:active{transform:scale(.95)}
+    </style>
+</head>
+<body>
+    <div id="welcomeScreen">
+        <img src="../favicon.svg" class="w-logo" alt="Logo">
+        <div class="w-title">SA MẠC ẢO GIÁC</div>
+        <div class="w-sub">Desert Mirage</div>
+        <div class="w-msg">Chào mừng bạn đến với game của Hieu Louis</div>
+        <button class="play-btn" id="playBtn">CHƠI NGAY</button>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+    <div id="hud">
+        <div id="speedDisplay">0 km/h</div>
+        <div id="distanceDisplay">0.00 km</div>
+    </div>
+    <div id="forkWarning">⚠ NGÃ RẾ SẮP TỚI — Rẽ trái hoặc phải!</div>
+    <div id="controls">
+        <div class="ctrl-btn" id="btnLeft">◀</div>
+        <div class="ctrl-btn" id="btnRight">▶</div>
+        <div class="ctrl-btn" id="btnGas">▲</div>
+        <div class="ctrl-btn" id="btnBrake">▼</div>
+    </div>
+    <div id="deathScreen">
+        <div class="d-icon">🔥</div>
+        <div class="d-title">XE ĐÃ HỎNG!</div>
+        <div class="d-dist" id="deathDist">Bạn đã đi được 0.00km rồi, cố lên!</div>
+        <button class="d-btn" id="replayBtn">CHƠI LẠI</button>
+    </div>
+    <div id="easterEggScreen">
+        <div class="e-icon">🎉</div>
+        <div class="e-msg">Chúc mừng bạn đã lãng phí 1 tiếng của cuộc đời</div>
+        <button class="e-btn" id="easterEggBtn">CHƠI LẠI</button>
+    </div>
+    <script src="three.min.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>

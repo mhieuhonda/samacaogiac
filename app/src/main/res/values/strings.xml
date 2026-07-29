@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sa Mạc Ảo Giác</string>
+    <string name="loading_text">Đang tải...</string>
+    <string name="welcome_text">Chào mừng bạn đến với game của Hieu Louis</string>
+    <string name="play_button">Chơi ngay</string>
+</resources>
