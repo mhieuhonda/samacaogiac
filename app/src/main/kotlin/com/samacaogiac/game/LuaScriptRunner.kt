@@ -41,6 +41,7 @@ object LuaScriptRunner {
     @Volatile private var initialized = false
 
     @Synchronized
+    @JvmStatic
     fun init(ctx: Context) {
         if (initialized) return
         ctxRef = ctx.applicationContext
@@ -105,6 +106,7 @@ object LuaScriptRunner {
     }
 
     /** Update the `game` table before invoking an event script. */
+    @JvmStatic
     fun updateGameState(distKm: Float, speedKmh: Float, deaths: Int,
                         bestKm: Float, trollLevel: Int) {
         val g = globals ?: return
@@ -118,6 +120,7 @@ object LuaScriptRunner {
     }
 
     /** Run a Lua script from assets/lua/<name>.lua */
+    @JvmStatic
     fun runEvent(name: String) {
         val g = globals ?: return
         runAsset(g, "$LUA_DIR/$name.lua")
@@ -137,5 +140,6 @@ object LuaScriptRunner {
         }
     }
 
+    @JvmStatic
     fun isAvailable(): Boolean = initialized
 }
