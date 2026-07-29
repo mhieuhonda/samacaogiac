@@ -22,6 +22,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install Android build tools
+        run: |
+          ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "build-tools;34.0.0" "platforms;android-34" > /dev/null 2>&1 || true
+
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -34,40 +38,24 @@ jobs:
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x gradlew || true
+      - name: Create Gradle wrapper
+        run: |
+          gradle wrapper --gradle-version 8.4
 
       - name: Build Debug APK
         run: |
-          cd ${{ github.workspace }}
-          ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "build-tools;34.0.0" "platforms;android-34" "ndk;26.1.10909125" > /dev/null 2>&1 || true
-          # Use gradle directly since we don't have gradlew script
-          gradle assembleDebug || true
-          # Alternative: direct build with Android tools
-          mkdir -p build_output
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
 
-      - name: Build Release APK (manual approach)
+      - name: Prepare release output
         run: |
-          # Build using a simpler approach
-          export ANDROID_SDK_ROOT=$ANDROID_HOME
-          # Create gradle wrapper if needed
-          gradle wrapper --gradle-version 8.4 2>/dev/null || true
-          ./gradlew assembleRelease 2>/dev/null || {
-            echo "Gradle build failed, trying alternative..."
-            # We'll rely on the next step to create the APK
-          }
-
-      - name: Prepare release
-        run: |
-          # Find APK
-          APK_PATH=$(find . -name "*.apk" -type f | head -1)
-          if [ -z "$APK_PATH" ]; then
-            echo "No APK found - creating placeholder for manual build"
-            echo "Build instructions are in README.md"
-            mkdir -p release_output
+          mkdir -p release_output
+          APK_PATH=$(find app/build/outputs -name "*.apk" -type f | head -1)
+          if [ -n "$APK_PATH" ]; then
+            cp "$APK_PATH" release_output/SaMacAoGiac-debug.apk
+            echo "APK built successfully: $APK_PATH"
           else
-            cp "$APK_PATH" release_output/
-            echo "APK found: $APK_PATH"
+            echo "No APK found - build may have failed"
           fi
 
       - name: Create Release
@@ -76,30 +64,26 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: "Sa Mạc Ảo Giác ${{ github.ref_name }}"
           body: |
-            ## Sa Mạc Ảo Giác - Desert Mirage
+            ## 🏜️ Sa Mạc Ảo Giác — Desert Mirage
 
-            🏜️ Game đua xe trên sa mạc - góc nhìn thứ ba!
+            Game đua xe sa mạc góc nhìn thứ ba cho Android!
 
-            ### Cách cài đặt:
+            ### 🎮 Cách cài đặt:
             1. Download file APK bên dưới
-            2. Mở file APK trên điện thoại Android
+            2. Mở file trên điện thoại Android 7.0+
             3. Cài đặt và chơi!
 
-            ### Yêu cầu:
-            - Android 7.0+ (API 24)
-            - Khuyên: Android 8.0+ cho trải nghiệm tốt nhất
+            ### 🎭 v0.2 Highlights:
+            - 🐛 Fix 8 bugs from v0.1
+            - 🎭 Troll features: control reversal, car color change, fake notifications
+            - 🏆 Sarcastic achievement milestones
+            - 🎯 Real fork road geometry + dead-end barrier
+            - 💀 Obstacle collision (rocks + dead camels)
+            - 🚗 Improved car model
+            - 📱 Off-road vignette + screen shake
+            - 🔔 Vibration feedback
 
-            ### Tính năng:
-            - 🚗 Xe ô tô 3D đẹp mắt
-            - 🏜️ Bối cảnh sa mạc chân thực
-            - 🎮 Điều khiển đơn giản (hai bên màn hình)
-            - ⚡ Tối ưu cho điện thoại yếu
-            - 🔁 Đường đi lặp lại (không nặng game)
-            - 🎯 Ngã rẽ chống AFK
-            - 💀 Màn hình chết với thông tin km
-            - 🎉 Easter egg 1 tiếng chơi
-
-            > **Lưu ý:** Nếu APK không tự build, hãy clone repo và build bằng Android Studio.
+            > **Lưu ý:** Clone repo + Android Studio để build nếu APK không tự build.
           files: |
             release_output/*.apk
           draft: false
