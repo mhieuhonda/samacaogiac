@@ -49,19 +49,21 @@ fi
 # 2. Signature schemes
 if command -v "$APKSIGNER" >/dev/null 2>&1; then
     info "Signature info:"
-    if "$APKSIGNER" verify --print-certs "$APK" 2>&1 | grep -q "Verified using v1 scheme"; then
-        pass "v1 signature"
+    # Note: --verbose is required to see "Verified using vN scheme" lines.
+    SIGOUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1 || true)"
+    echo "$SIGOUT" | grep -E "^(Verified|Number of)" | head -10 | sed 's/^/    /'
+    if echo "$SIGOUT" | grep -q "Verified using v1 scheme (JAR signing): true"; then
+        pass "v1 signature (legacy Android <7)"
     else
-        fail "v1 signature missing (legacy — needed for Android <7)"
-        EXIT=1
+        info "v1 signature not present (modern Android doesn't need it)"
     fi
-    if "$APKSIGNER" verify --print-certs "$APK" 2>&1 | grep -q "Verified using v2 scheme"; then
+    if echo "$SIGOUT" | grep -q "Verified using v2 scheme (APK Signature Scheme v2): true"; then
         pass "v2 signature (Android 7+)"
     else
         fail "v2 signature missing — Google Play Protect WILL warn"
         EXIT=1
     fi
-    if "$APKSIGNER" verify --print-certs "$APK" 2>&1 | grep -q "Verified using v3 scheme"; then
+    if echo "$SIGOUT" | grep -q "Verified using v3 scheme (APK Signature Scheme v3): true"; then
         pass "v3 signature (Android 9+ key rotation)"
     else
         # v3 is not strictly required but recommended
