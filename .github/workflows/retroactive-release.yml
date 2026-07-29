@@ -15,9 +15,6 @@ jobs:
       releases: ${{ steps.find-releases.outputs.releases }}
       has_releases: ${{ steps.find-releases.outputs.has_releases }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Find releases without APK
         id: find-releases
         uses: actions/github-script@v7
@@ -27,7 +24,6 @@ jobs:
             let releasesToBuild = [];
 
             if (specificTag) {
-              // Build for a specific tag
               try {
                 const release = await github.rest.repos.getReleaseByTag({
                   owner: context.repo.owner,
@@ -53,7 +49,6 @@ jobs:
                 return;
               }
             } else {
-              // Find ALL releases without APK
               const releases = await github.rest.repos.listReleases({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -120,42 +115,61 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
 
-      - name: Create Gradle wrapper
-        run: gradle wrapper --gradle-version 8.4
-
-      - name: Build Signed Release APK
-        env:
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          KEYSTORE_FILE: release.keystore
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      - name: Fix build issues for old tags
         run: |
+          # Remove allprojects block if it exists (conflicts with settings.gradle FAIL_ON_PROJECT_REPOS)
+          sed -i '/^allprojects {/,/^}/d' build.gradle
+
+          # Ensure gradlew exists
+          if [ ! -f "gradlew" ]; then
+            echo "gradlew not found, creating wrapper..."
+            # Download gradle wrapper files from main branch
+            cd /tmp
+            git clone --depth 1 https://github.com/${{ github.repository }}.git main_repo 2>/dev/null || true
+            if [ -f "/tmp/main_repo/gradlew" ]; then
+              cp /tmp/main_repo/gradlew /tmp/main_repo/gradlew.bat .
+              cp -r /tmp/main_repo/gradle/wrapper/. gradle/wrapper/.
+            fi
+            rm -rf /tmp/main_repo
+          fi
           chmod +x gradlew
-          ./gradlew assembleRelease --stacktrace
 
-      - name: Verify APK is signed
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Sign APK with apksigner
         run: |
-          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
-          if [ -n "$APK_PATH" ]; then
-            echo "APK found: $APK_PATH"
-            ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify --print-certs "$APK_PATH" || echo "Warning: APK signing verification issue"
-          else
+          APK_PATH=$(find app/build/outputs/apk/release -name "*-unsigned.apk" -o -name "*.apk" | head -1)
+          if [ -z "$APK_PATH" ]; then
             echo "ERROR: No APK found!"
             exit 1
           fi
+          echo "Found APK: $APK_PATH"
+
+          # Zipalign
+          ALIGNED_PATH="app/build/outputs/apk/release/aligned.apk"
+          ${ANDROID_HOME}/build-tools/34.0.0/zipalign -v 4 "$APK_PATH" "$ALIGNED_PATH" || cp "$APK_PATH" "$ALIGNED_PATH"
+
+          # Sign with apksigner
+          SIGNED_PATH="app/build/outputs/apk/release/SaMacAoGiac-signed.apk"
+          ${ANDROID_HOME}/build-tools/34.0.0/apksigner sign \
+            --ks app/release.keystore \
+            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            --out "$SIGNED_PATH" \
+            "$ALIGNED_PATH"
+
+          # Verify
+          ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify --print-certs "$SIGNED_PATH"
+          echo "APK signed successfully: $SIGNED_PATH"
 
       - name: Prepare release output
         run: |
           mkdir -p release_output
-          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
           TAG_NAME="${{ matrix.release.tag }}"
-          if [ -n "$APK_PATH" ]; then
-            cp "$APK_PATH" "release_output/SaMacAoGiac-${TAG_NAME}.apk"
-            echo "APK prepared: SaMacAoGiac-${TAG_NAME}.apk"
-          else
-            echo "ERROR: No APK found"
-            exit 1
-          fi
+          cp "app/build/outputs/apk/release/SaMacAoGiac-signed.apk" "release_output/SaMacAoGiac-${TAG_NAME}.apk"
+          echo "APK prepared: SaMacAoGiac-${TAG_NAME}.apk"
 
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
