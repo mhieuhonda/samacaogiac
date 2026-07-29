@@ -47,7 +47,6 @@ public class GameActivity extends AppCompatActivity {
         settings.setAllowFileAccess(true);
         // FIX: security — disable file access from file URLs
         settings.setAllowFileAccessFromFileURLs(false);
-        settings.setAllowContentAccessFromFileURLs(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         // FIX: removed setDatabaseEnabled (deprecated, no-op since API 19)
