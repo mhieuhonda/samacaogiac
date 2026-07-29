@@ -43,7 +43,7 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
 
-      - name: Fix build.gradle for old tags
+      - name: Fix build.gradle for compatibility
         run: |
           # Remove allprojects block if it exists (conflicts with settings.gradle FAIL_ON_PROJECT_REPOS)
           sed -i '/^allprojects {/,/^}/d' build.gradle
