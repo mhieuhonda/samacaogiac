@@ -1,34 +1,34 @@
 // ============================================================
-// SA MẠC ẢO GIÁC — Game Engine v0.3
-// Fixed: black screen, car size, road width, off-road, reverse,
-//        fork barrier collision, UI blocking, dust bug, HTML dup id
+// SA MẠC ẢO GIÁC — Game Engine v0.4
+// Fixed: troll timeout leak, double death, keyboard controls,
+//        vibration bridge, camera snap, memory, state management
 // ============================================================
 (function(){
 'use strict';
 
 /* ── CONFIG ── */
 const C = {
-    ROAD_W: 14,           // wider road (was 8)
+    ROAD_W: 14,
     SEG_LEN: 80,
     NUM_SEGS: 14,
-    FORK_EVERY: 3,        // fork every N segments
+    FORK_EVERY: 3,
     CAR_BASE_SPEED: 28,
     CAR_MAX_SPEED: 52,
     CAR_MIN_SPEED: 6,
-    TURN_RATE: 2.2,       // more responsive (was 1.8)
-    CAM_DIST: 16,         // further back (was 12)
-    CAM_H: 7.5,           // higher (was 6)
-    CAM_LOOK_AHEAD: 12,   // further look (was 8)
-    CAM_LERP: 0.08,       // faster camera follow (was 0.06)
-    OFFROAD_LIMIT: 5,     // more forgiving (was 4)
+    TURN_RATE: 2.2,
+    CAM_DIST: 16,
+    CAM_H: 7.5,
+    CAM_LOOK_AHEAD: 12,
+    CAM_LERP: 0.08,
+    OFFROAD_LIMIT: 5,
     KM: 1000,
     EASTER_MS: 3600000,
     PR_CAP: 1.5,
-    CAR_SCALE: 1.3,       // scale up car model
-    MAX_STEER_Y: Math.PI/3.5,  // ~51 deg max turn, can't reverse
-    ROAD_SOFT_EDGE: 3,    // soft boundary width from road edge
-    OFFROAD_PUSH: 5,      // force pushing car back toward road
-    BARRIER_X_LIMIT: 3.5, // car must be outside this X to pass fork
+    CAR_SCALE: 1.3,
+    MAX_STEER_Y: Math.PI/3.5,
+    ROAD_SOFT_EDGE: 3,
+    OFFROAD_PUSH: 5,
+    BARRIER_X_LIMIT: 3.5,
 };
 
 /* ── STATE ── */
@@ -41,7 +41,7 @@ const S = {
     t0: 0,
     paused: false,
     forkShown: false,
-    // Troll state
+    dead: false,          // FIX: prevent double death
     controlsReversed: false,
     reverseTimer: 0,
     carColorTimer: 0,
@@ -65,6 +65,11 @@ let sunMesh, sunLight, ambientLight, hemiLight;
 let dustPts;
 let groundMeshes = [];
 let isLowDevice = false;
+
+/* ── TIMEOUT TRACKING (FIX: prevent leak) ── */
+let trollTimeout = null;
+let achievementTimeout = null;
+let fogTimeout = null;
 
 /* ── INPUT ── */
 const inp = { left:false, right:false, gas:false, brake:false };
@@ -113,6 +118,36 @@ addClick('playBtn', startGame);
 addClick('replayBtn', restart);
 addClick('easterBtn', restart);
 
+/* FIX: Keyboard controls for desktop testing */
+document.addEventListener('keydown', e=>{
+    if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') inp.left=true;
+    if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') inp.right=true;
+    if(e.key==='ArrowUp'||e.key==='w'||e.key==='W') inp.gas=true;
+    if(e.key==='ArrowDown'||e.key==='s'||e.key==='S') inp.brake=true;
+    if(e.key===' '||e.key==='Enter') {
+        if(S.phase==='welcome') startGame();
+        else if(S.phase==='dead') restart();
+        else if(S.phase==='easter') restart();
+    }
+});
+document.addEventListener('keyup', e=>{
+    if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') inp.left=false;
+    if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') inp.right=false;
+    if(e.key==='ArrowUp'||e.key==='w'||e.key==='W') inp.gas=false;
+    if(e.key==='ArrowDown'||e.key==='s'||e.key==='S') inp.brake=false;
+});
+
+/* ── VIBRATION BRIDGE ── */
+function vibrate(ms){
+    try{
+        if(typeof AndroidBridge!=='undefined' && AndroidBridge.vibrate){
+            AndroidBridge.vibrate(ms);
+        } else if(navigator.vibrate){
+            navigator.vibrate(ms);
+        }
+    }catch(e){}
+}
+
 /* ───────────────────────────────────────────
    INIT
    ─────────────────────────────────────────── */
@@ -124,7 +159,6 @@ function init(){
     scene.fog = new THREE.FogExp2(0xD2B48C, low ? 0.010 : 0.005);
 
     cam = new THREE.PerspectiveCamera(low?55:60, innerWidth/innerHeight, 0.5, 500);
-    // FIX: Initialize camera at proper position behind car
     cam.position.set(0, C.CAM_H, C.CAM_DIST);
     cam.lookAt(0, 1.5, 0);
 
@@ -211,17 +245,14 @@ function createSeg(idx, isFork, low){
     const w=C.ROAD_W, len=C.SEG_LEN;
     const grp=new THREE.Group();
 
-    // Road surface
     const road=new THREE.Mesh(new THREE.PlaneGeometry(w,len,1,low?2:4),new THREE.MeshLambertMaterial({color:0x3d3d3d}));
     road.rotation.x=-Math.PI/2; road.position.y=0.03; road.receiveShadow=!low; grp.add(road);
 
-    // Edge lines (brighter, wider for visibility)
     const lMat=new THREE.MeshBasicMaterial({color:0xeeeeee});
     const lG=new THREE.PlaneGeometry(.3,len);
     const lL=new THREE.Mesh(lG,lMat); lL.rotation.x=-Math.PI/2; lL.position.set(-w/2+.15,.04,0); grp.add(lL);
     const rL=new THREE.Mesh(lG,lMat); rL.rotation.x=-Math.PI/2; rL.position.set(w/2-.15,.04,0); grp.add(rL);
 
-    // Center dashes (more frequent)
     const dMat=new THREE.MeshBasicMaterial({color:0xaaaaaa});
     const dG=new THREE.PlaneGeometry(.15,4);
     for(let d=-len/2+2;d<len/2;d+=8){
@@ -229,16 +260,12 @@ function createSeg(idx, isFork, low){
         dash.rotation.x=-Math.PI/2; dash.position.set(0,.04,d); grp.add(dash);
     }
 
-    // Shoulders (FIX: proper creation, not Object.assign hack)
     const sMat=new THREE.MeshLambertMaterial({color:0xb89968});
     const sG=new THREE.PlaneGeometry(3,len);
     const ls=new THREE.Mesh(sG,sMat); ls.rotation.x=-Math.PI/2; ls.position.set(-w/2-1.5,.01,0); grp.add(ls);
     const rs=new THREE.Mesh(sG,sMat); rs.rotation.x=-Math.PI/2; rs.position.set(w/2+1.5,.01,0); grp.add(rs);
 
-    // Fork: actual split road geometry
-    if(isFork){
-        buildForkGeometry(grp, low);
-    }
+    if(isFork) buildForkGeometry(grp, low);
 
     scene.add(grp);
     grp.position.z = -idx * len;
@@ -251,7 +278,6 @@ function buildForkGeometry(grp, low){
     const sMat=new THREE.MeshLambertMaterial({color:0xf59e0b});
     const pMat=new THREE.MeshLambertMaterial({color:0x8b4513});
 
-    // Left fork road (curves left)
     const fLen=40, fSegs=5, fAngle=-0.4;
     let curAngle=0, curX=-w/2, curZ=len/2-10;
     for(let i=0;i<fSegs;i++){
@@ -264,7 +290,6 @@ function buildForkGeometry(grp, low){
         curZ-=Math.cos(curAngle)*sLen;
     }
 
-    // Right fork road (curves right)
     curAngle=0; curX=w/2; curZ=len/2-10;
     for(let i=0;i<fSegs;i++){
         const sLen=fLen/fSegs;
@@ -276,7 +301,6 @@ function buildForkGeometry(grp, low){
         curZ-=Math.cos(curAngle)*sLen;
     }
 
-    // Sign posts on both sides
     [-1,1].forEach(side=>{
         const post=new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,3.5,4),pMat);
         post.position.set(side*(w/2+3),1.75,len/2-6); grp.add(post);
@@ -288,20 +312,16 @@ function buildForkGeometry(grp, low){
         grp.add(arrow);
     });
 
-    // Dead-end barrier in center — FIX: bigger, more visible, proper collision
     const barrier=new THREE.Mesh(new THREE.BoxGeometry(w*.7,1.8,.4),new THREE.MeshLambertMaterial({color:0xff3333}));
     barrier.position.set(0,.9,len/2-15); grp.add(barrier);
-    // Barrier posts
     [-w*.35, w*.35].forEach(xp=>{
         const bPost=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,2.5,6),pMat);
         bPost.position.set(xp,1.25,len/2-15); grp.add(bPost);
     });
-    // Warning stripes (chevron pattern)
     for(let s=-w*.35+1;s<w*.35;s+=2){
         const stripe=new THREE.Mesh(new THREE.PlaneGeometry(1.8,.1),new THREE.MeshBasicMaterial({color:0xffcc00}));
         stripe.position.set(s,1.3,len/2-15.2); stripe.rotation.x=-Math.PI/2; grp.add(stripe);
     }
-    // Warning sign above barrier
     const warnSign=new THREE.Mesh(new THREE.BoxGeometry(2.5,.6,.08),new THREE.MeshBasicMaterial({color:0xff3333}));
     warnSign.position.set(0,2.8,len/2-15); grp.add(warnSign);
 }
@@ -336,73 +356,46 @@ function buildCar(low){
     const yelM=new THREE.MeshBasicMaterial({color:0xffee44});
     const redM=new THREE.MeshBasicMaterial({color:0xff2222});
 
-    // Body
     carBodyMesh=bx(carGroup,2.5,.6,4.6,bodyM,0,.55,0,!low);
-    // Hood slope
     const hood=bx(carGroup,2.35,.35,1.6,bodyM,0,.85,1.15,!low);
     hood.rotation.x=-.08;
-    // Cabin
     bx(carGroup,2.15,.55,2,darkM,0,1.15,-.15,!low);
-    // Roof
     bx(carGroup,1.95,.14,1.85,blkM,0,1.48,-.15,false);
-    // Trunk
     bx(carGroup,2.35,.3,1.1,bodyM,0,.85,-1.5,!low);
-    // Windshield
     const ws=bx(carGroup,2,.52,.06,glassM,0,1.15,.7,false); ws.rotation.x=-.38;
-    // Rear window
     const rw=bx(carGroup,2,.42,.06,glassM,0,1.15,-1.1,false); rw.rotation.x=.32;
-    // Side windows
     bx(carGroup,.06,.35,1.6,glassM,-1.08,1.15,-.15,false);
     bx(carGroup,.06,.35,1.6,glassM,1.08,1.15,-.15,false);
-    // Headlights
     sp(carGroup,.15,yelM,-.9,.58,2.3,8); sp(carGroup,.15,yelM,.9,.58,2.3,8);
-    // Fog lights
     sp(carGroup,.08,yelM,-.5,.35,2.35,6); sp(carGroup,.08,yelM,.5,.35,2.35,6);
-    // Tail lights
     sp(carGroup,.13,redM,-.9,.58,-2.3,8); sp(carGroup,.13,redM,.9,.58,-2.3,8);
-    // Bumpers
     bx(carGroup,2.5,.2,.28,blkM,0,.36,2.18,false);
     bx(carGroup,2.5,.2,.28,blkM,0,.36,-2.18,false);
-    // Grille
     bx(carGroup,1.7,.22,.08,blkM,0,.47,2.32,false);
-    // Grille chrome strips
-    for(let s=-.7;s<=.7;s+=.35){
-        bx(carGroup,.04,.18,.1,chrM,s,.47,2.34,false);
-    }
-    // Side skirts
+    for(let s=-.7;s<=.7;s+=.35) bx(carGroup,.04,.18,.1,chrM,s,.47,2.34,false);
     bx(carGroup,.08,.22,3.9,blkM,-1.27,.32,0,false);
     bx(carGroup,.08,.22,3.9,blkM,1.27,.32,0,false);
-    // Exhaust pipes (dual)
     cy(carGroup,.07,.07,.5,chrM,-.55,.22,-2.35,Math.PI/2,8);
     cy(carGroup,.07,.07,.5,chrM,.55,.22,-2.35,Math.PI/2,8);
-    // Side mirrors
     bx(carGroup,.16,.13,.1,blkM,-1.32,1,0.3,false);
     bx(carGroup,.16,.13,.1,blkM,1.32,1,0.3,false);
-    // Door lines
     bx(carGroup,.02,.45,1.8,blkM,-1.26,.75,0,false);
     bx(carGroup,.02,.45,1.8,blkM,1.26,.75,0,false);
-    // Spoiler
     bx(carGroup,1.9,.08,.45,blkM,0,1.4,-1.85,false);
     bx(carGroup,.08,.35,.08,blkM,-.75,1.22,-1.85,false);
     bx(carGroup,.08,.35,.08,blkM,.75,1.22,-1.85,false);
-    // Racing stripe on hood
     bx(carGroup,.12,.01,2.5,new THREE.MeshBasicMaterial({color:0xffffff}),0,.87,1,false);
-    // License plate area
     bx(carGroup,.8,.3,.04,chrM,0,.38,-2.3,false);
 
-    // Wheels (with proper spin axis)
     const wG=new THREE.CylinderGeometry(.36,.36,.24,low?10:16);
     const hG=new THREE.CylinderGeometry(.16,.16,.26,low?6:10);
     const rG=new THREE.TorusGeometry(.3,.05,6,low?10:16);
     const wP=[{x:-1.28,z:1.4},{x:1.28,z:1.4},{x:-1.28,z:-1.35},{x:1.28,z:-1.35}];
     wP.forEach(p=>{
         const wg=new THREE.Group();
-        const tire=new THREE.Mesh(wG,blkM);
-        tire.rotation.z=Math.PI/2; wg.add(tire);
-        const hub=new THREE.Mesh(hG,chrM);
-        hub.rotation.z=Math.PI/2; wg.add(hub);
-        const rim=new THREE.Mesh(rG,chrM);
-        rim.rotation.y=Math.PI/2; wg.add(rim);
+        const tire=new THREE.Mesh(wG,blkM); tire.rotation.z=Math.PI/2; wg.add(tire);
+        const hub=new THREE.Mesh(hG,chrM); hub.rotation.z=Math.PI/2; wg.add(hub);
+        const rim=new THREE.Mesh(rG,chrM); rim.rotation.y=Math.PI/2; wg.add(rim);
         for(let s=0;s<5;s++){
             const spoke=bx(wg,.04,.02,.5,chrM,0,0,0,false);
             spoke.rotation.z=Math.PI/2; spoke.rotation.y=s*Math.PI*2/5;
@@ -412,9 +405,7 @@ function buildCar(low){
         carGroup.add(wg); wheels.push(wg);
     });
 
-    // FIX: Scale car up so it's visible and proportionally correct
     carGroup.scale.set(C.CAR_SCALE, C.CAR_SCALE, C.CAR_SCALE);
-
     carGroup.position.set(0,0,0);
     scene.add(carGroup);
 }
@@ -449,7 +440,6 @@ function buildDecorations(low){
         d.position.set(side*(55+Math.random()*90),-.5,-(Math.random()*totalLen));
         d.userData.isDeco=true; scene.add(d); decoPool.push(d);
     }
-    // Dead trees
     for(let i=0;i<8;i++){
         const t=mkDeadTree(deadMat,low);
         const side=Math.random()>.5?1:-1;
@@ -463,16 +453,9 @@ function mkCactus(m,low){
     const h=1.8+Math.random()*1.2;
     const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.15,.2,h,low?4:6),m);
     trunk.position.y=h/2; g.add(trunk);
-    if(Math.random()>.25){
-        const arm=new THREE.Mesh(new THREE.CylinderGeometry(.08,.12,.8+Math.random()*.4,4),m);
-        arm.position.set(.3,h*.6+Math.random()*.2,0);arm.rotation.z=-.55;g.add(arm);
-    }
-    if(Math.random()>.25){
-        const arm2=new THREE.Mesh(new THREE.CylinderGeometry(.08,.12,.6+Math.random()*.3,4),m);
-        arm2.position.set(-.25,h*.5+Math.random()*.2,0);arm2.rotation.z=.45;g.add(arm2);
-    }
-    const top=new THREE.Mesh(new THREE.SphereGeometry(.14,4,4),m);
-    top.position.y=h+.05;g.add(top);
+    if(Math.random()>.25){const arm=new THREE.Mesh(new THREE.CylinderGeometry(.08,.12,.8+Math.random()*.4,4),m);arm.position.set(.3,h*.6+Math.random()*.2,0);arm.rotation.z=-.55;g.add(arm);}
+    if(Math.random()>.25){const arm2=new THREE.Mesh(new THREE.CylinderGeometry(.08,.12,.6+Math.random()*.3,4),m);arm2.position.set(-.25,h*.5+Math.random()*.2,0);arm2.rotation.z=.45;g.add(arm2);}
+    const top=new THREE.Mesh(new THREE.SphereGeometry(.14,4,4),m);top.position.y=h+.05;g.add(top);
     return g;
 }
 
@@ -493,11 +476,7 @@ function mkDeadTree(m,low){
     const g=new THREE.Group();
     const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.08,.12,3,low?3:5),m);
     trunk.position.y=1.5; trunk.rotation.z=(Math.random()-.5)*.15; g.add(trunk);
-    for(let b=0;b<3;b++){
-        const br=new THREE.Mesh(new THREE.CylinderGeometry(.03,.05,.6+Math.random(),3),m);
-        br.position.set(Math.random()>.5?.2:-.2,1+b*.5+Math.random(),0);
-        br.rotation.z=(Math.random()-.5)*1.2; g.add(br);
-    }
+    for(let b=0;b<3;b++){const br=new THREE.Mesh(new THREE.CylinderGeometry(.03,.05,.6+Math.random(),3),m);br.position.set(Math.random()>.5?.2:-.2,1+b*.5+Math.random(),0);br.rotation.z=(Math.random()-.5)*1.2;g.add(br);}
     return g;
 }
 
@@ -513,12 +492,11 @@ function recycleDeco(){
     });
 }
 
-/* ── OBSTACLES (on/near road) ── */
+/* ── OBSTACLES ── */
 function buildObstacles(low){
     const oMat=new THREE.MeshLambertMaterial({color:0x9e8c6c,flatShading:true});
     const camelMat=new THREE.MeshLambertMaterial({color:0xb89968,flatShading:low});
     const totalLen=C.NUM_SEGS*C.SEG_LEN;
-    // Small rocks on road edge
     for(let i=0;i<20;i++){
         const r=mkRock(oMat);
         const side=Math.random()>.5?1:-1;
@@ -526,7 +504,6 @@ function buildObstacles(low){
         r.userData.isObs=true; r.userData.obsRadius=.3+Math.random()*.3;
         scene.add(r); obstaclePool.push(r);
     }
-    // Dead camels on road (troll!)
     for(let i=0;i<6;i++){
         const c=mkDeadCamel(camelMat,low);
         const side=Math.random()>.5?1:-1;
@@ -538,15 +515,13 @@ function buildObstacles(low){
 
 function mkDeadCamel(m,low){
     const g=new THREE.Group();
-    const body=new THREE.Mesh(new THREE.BoxGeometry(1.8,.8,2.5),m);
-    body.position.y=.4; g.add(body);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(1.8,.8,2.5),m);body.position.y=.4;g.add(body);
     const legM=new THREE.MeshLambertMaterial({color:0x9e8c6c});
     [[-0.7,.1,.8],[.7,.1,.8],[-0.7,.1,-.8],[.7,.1,-.8]].forEach(p=>{
         const leg=new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,1.2,4),legM);
         leg.position.set(p[0],p[1],p[2]); leg.rotation.z=p[0]<0?.4:-.4; g.add(leg);
     });
-    const head=new THREE.Mesh(new THREE.BoxGeometry(.4,.3,.5),m);
-    head.position.set(0,.15,1.4); head.rotation.x=.3; g.add(head);
+    const head=new THREE.Mesh(new THREE.BoxGeometry(.4,.3,.5),m);head.position.set(0,.15,1.4);head.rotation.x=.3;g.add(head);
     return g;
 }
 
@@ -563,15 +538,13 @@ function recycleObs(){
 }
 
 function checkObstacles(){
+    if(S.dead) return; // FIX: prevent double death
     const cx=carGroup.position.x, cz=carGroup.position.z;
     obstaclePool.forEach(o=>{
         if(!o.userData.isObs)return;
         const dx=o.position.x-cx, dz=o.position.z-cz;
         const dist=Math.sqrt(dx*dx+dz*dz);
-        // Collision radius accounts for scaled car
-        if(dist<o.userData.obsRadius+1.5*C.CAR_SCALE){
-            triggerDeath();
-        }
+        if(dist<o.userData.obsRadius+1.5*C.CAR_SCALE) triggerDeath();
     });
 }
 
@@ -580,18 +553,14 @@ function buildDust(){
     const n=60;
     const g=new THREE.BufferGeometry();
     const pos=new Float32Array(n*3);
-    for(let i=0;i<n;i++){
-        pos[i*3]=(Math.random()-.5)*8;
-        pos[i*3+1]=Math.random()*1.5;
-        pos[i*3+2]=(Math.random()-.5)*4-2;
-    }
+    for(let i=0;i<n;i++){pos[i*3]=(Math.random()-.5)*8;pos[i*3+1]=Math.random()*1.5;pos[i*3+2]=(Math.random()-.5)*4-2;}
     g.setAttribute('position',new THREE.BufferAttribute(pos,3));
     dustPts=new THREE.Points(g,new THREE.PointsMaterial({color:0xD2B48C,size:.35,transparent:true,opacity:.2,depthWrite:false}));
     scene.add(dustPts);
 }
 
 /* ───────────────────────────────────────────
-   GAME LOOP (single loop only)
+   GAME LOOP
    ─────────────────────────────────────────── */
 function gameLoop(){
     if(!loopRunning) return;
@@ -604,33 +573,19 @@ function gameLoop(){
 
     const dt=Math.min(clock.getDelta(),0.06);
 
-    // Car physics
     updateCar(dt);
-    // Road check
     checkRoad(dt);
-    // Obstacle collision
     checkObstacles();
-    // Fork barrier collision
     checkForkBarrier();
-    // Distance
     S.dist+=S.speed*dt/C.KM;
-    // Fork warning
     checkForkWarning();
-    // Camera
     updateCamera();
-    // Recycle
     recycleSegs(); recycleDeco(); recycleObs();
-    // Particles
     if(dustPts) updateDust(dt);
-    // Troll features
     updateTrolls(dt);
-    // Shake effect
     updateShake(dt);
-    // HUD
     updateHUD(dt);
-    // Easter egg
     if(Date.now()-S.t0>=C.EASTER_MS) triggerEaster();
-    // Render
     renderer.render(scene,cam);
 }
 
@@ -640,11 +595,9 @@ function startLoop(){
     clock.start();
     gameLoop();
 }
-function stopLoop(){
-    loopRunning=false;
-}
+function stopLoop(){ loopRunning=false; }
 
-/* ── CAR PHYSICS (FIXED) ── */
+/* ── CAR PHYSICS ── */
 function updateCar(dt){
     let target=C.CAR_BASE_SPEED;
     if(inp.gas) target=C.CAR_MAX_SPEED;
@@ -653,59 +606,44 @@ function updateCar(dt){
     S.speed=Math.max(C.CAR_MIN_SPEED,Math.min(C.CAR_MAX_SPEED,S.speed));
     if(!S.onRoad) S.speed=Math.max(3,S.speed*(1-dt*2));
 
-    // Steering with reversal for troll
     let steer=0;
     let left=inp.left, right=inp.right;
     if(S.controlsReversed){left=inp.right;right=inp.left;}
     if(left) steer=-1; if(right) steer=1;
 
-    // FIX: Limit rotation so car can't reverse
     carGroup.rotation.y+=steer*C.TURN_RATE*dt;
-    // Clamp rotation to prevent reversing
     carGroup.rotation.y=Math.max(-C.MAX_STEER_Y, Math.min(C.MAX_STEER_Y, carGroup.rotation.y));
-    // Gradually return to straight when no steering input
     if(!left&&!right){
-        carGroup.rotation.y*=1-dt*2; // return toward 0
+        carGroup.rotation.y*=1-dt*2;
         if(Math.abs(carGroup.rotation.y)<0.01) carGroup.rotation.y=0;
     }
 
-    // Car tilt (visual feedback)
     carGroup.rotation.z=-steer*.08;
-    // Small bounce
     carGroup.position.y=Math.sin(Date.now()*0.008)*.02;
 
-    // Move car forward
     const fwd=S.speed*dt;
     carGroup.position.x+=Math.sin(carGroup.rotation.y)*fwd;
     carGroup.position.z-=Math.cos(carGroup.rotation.y)*fwd;
 
-    // FIX: Soft boundary — push car back toward road when drifting off
     const roadEdge = C.ROAD_W/2;
     const absX = Math.abs(carGroup.position.x);
     if(absX > roadEdge + C.ROAD_SOFT_EDGE){
-        // Push back toward road
         const pushDir = carGroup.position.x > 0 ? -1 : 1;
         carGroup.position.x += pushDir * C.OFFROAD_PUSH * dt;
     }
-
-    // FIX: Hard boundary — car can't go too far off-road
     const hardLimit = roadEdge + C.ROAD_SOFT_EDGE + 8;
-    if(absX > hardLimit){
-        carGroup.position.x = Math.sign(carGroup.position.x) * hardLimit;
-    }
+    if(absX > hardLimit) carGroup.position.x = Math.sign(carGroup.position.x) * hardLimit;
 
-    // Wheel spin (FIX: proper axis)
     wheels.forEach(w=>{
         w.children[0].rotation.x+=fwd*2;
         w.children[1].rotation.x+=fwd*2;
     });
 }
 
-/* ── ROAD CHECK (FIXED) ── */
+/* ── ROAD CHECK ── */
 function checkRoad(dt){
     const roadEdge = C.ROAD_W/2;
     const absX=Math.abs(carGroup.position.x);
-    // Off-road when more than roadEdge + soft margin from center
     if(absX>roadEdge+C.ROAD_SOFT_EDGE){
         S.onRoad=false;
         S.offRoadT+=dt;
@@ -713,28 +651,21 @@ function checkRoad(dt){
         if(S.offRoadT>=C.OFFROAD_LIMIT) triggerDeath();
     } else {
         S.onRoad=true;
-        S.offRoadT=Math.max(0, S.offRoadT-dt*0.5); // recover gradually
+        S.offRoadT=Math.max(0, S.offRoadT-dt*0.5);
         if(S.offRoadT<=0) offVig.style.display='none';
     }
 }
 
-/* ── FORK BARRIER COLLISION (NEW) ── */
+/* ── FORK BARRIER COLLISION ── */
 function checkForkBarrier(){
+    if(S.dead) return; // FIX: prevent double death
     const cZ=carGroup.position.z;
-    const cX=carGroup.position.x;
-    const absCX=Math.abs(cX);
-
+    const absCX=Math.abs(carGroup.position.x);
     segData.forEach(s=>{
         if(!s.isFork) return;
-        // Barrier is at local Z = len/2-15 in the segment group
         const barrierWorldZ = s.grp.position.z + C.SEG_LEN/2 - 15;
         const dz=Math.abs(cZ - barrierWorldZ);
-
-        // If car is near the barrier (within collision distance)
-        // and car's X is in the center zone (too close to barrier width)
-        if(dz < 2.5 && absCX < C.BARRIER_X_LIMIT){
-            triggerDeath();
-        }
+        if(dz < 2.5 && absCX < C.BARRIER_X_LIMIT) triggerDeath();
     });
 }
 
@@ -754,18 +685,15 @@ function checkForkWarning(){
     } else if(!nearFork) S.forkShown=false;
 }
 
-/* ── CAMERA (FIXED) ── */
+/* ── CAMERA ── */
 function updateCamera(){
     const r=carGroup.rotation.y;
     const tX=carGroup.position.x-Math.sin(r)*C.CAM_DIST;
     const tZ=carGroup.position.z+Math.cos(r)*C.CAM_DIST;
-
-    // FIX: Faster lerp so camera doesn't lag behind
     const lerpFactor = C.CAM_LERP;
     cam.position.x+=(tX-cam.position.x)*lerpFactor;
     cam.position.y+=(C.CAM_H-cam.position.y)*(lerpFactor*1.2);
     cam.position.z+=(tZ-cam.position.z)*lerpFactor;
-
     const lX=carGroup.position.x+Math.sin(r)*C.CAM_LOOK_AHEAD;
     const lZ=carGroup.position.z-Math.cos(r)*C.CAM_LOOK_AHEAD;
     cam.lookAt(lX,1.5,lZ);
@@ -790,7 +718,7 @@ function doShake(intensity, duration){
     S.shakeTimer=duration;
 }
 
-/* ── DUST UPDATE (FIX: state.speed → S.speed) ── */
+/* ── DUST UPDATE ── */
 function updateDust(dt){
     const p=dustPts.geometry.attributes.position.array;
     const cx=carGroup.position.x,cz=carGroup.position.z;
@@ -798,7 +726,7 @@ function updateDust(dt){
     for(let i=0;i<p.length;i+=3){
         p[i]+=(Math.random()-.5)*.3;
         p[i+1]+=Math.random()*.08;
-        p[i+2]+=(Math.random()-.5)*.3-S.speed*dt*.2; // FIX: S.speed, not state.speed
+        p[i+2]+=(Math.random()-.5)*.3-S.speed*dt*.2;
         if(p[i+1]>2.5) p[i+1]=Math.random()*.5;
         const dx=p[i]-cx, dz=p[i+2]-cz;
         if(Math.abs(dx)>10||Math.abs(dz)>10){
@@ -868,35 +796,21 @@ let nextTrollAt=15;
 function updateTrolls(dt){
     trollTimer+=dt;
 
-    // Control reversal
     if(S.controlsReversed){
         S.reverseTimer-=dt;
-        if(S.reverseTimer<=0){
-            S.controlsReversed=false;
-            revInd.style.display='none';
-        }
+        if(S.reverseTimer<=0){ S.controlsReversed=false; revInd.style.display='none'; }
     }
 
-    // Car color change timer
     if(S.carColorTimer>0){
         S.carColorTimer-=dt;
-        if(S.carColorTimer<=0){
-            carBodyMesh.material.color.setHex(0xcc0000);
-        }
+        if(S.carColorTimer<=0) carBodyMesh.material.color.setHex(0xcc0000);
     }
 
-    // Fake death flash timer
     if(S.fakeDeathFlash>0){
         S.fakeDeathFlash-=dt;
-        if(S.fakeDeathFlash<=0){
-            deathScr.style.display='none';
-            hudEl.style.display='block';
-            ctrlEl.style.display='block';
-            S.phase='playing';
-        }
+        if(S.fakeDeathFlash<=0){ deathScr.style.display='none'; hudEl.style.display='block'; ctrlEl.style.display='block'; S.phase='playing'; }
     }
 
-    // Milestone achievements
     ACHIEVEMENTS.forEach(a=>{
         if(S.dist>=a.km && !S.milestoneShown[a.km]){
             S.milestoneShown[a.km]=true;
@@ -905,7 +819,6 @@ function updateTrolls(dt){
         }
     });
 
-    // Random troll events
     if(trollTimer>=nextTrollAt && S.trollCooldown<=0){
         triggerRandomTroll();
         nextTrollAt=trollTimer+12+Math.random()*25;
@@ -913,7 +826,6 @@ function updateTrolls(dt){
     }
     if(S.trollCooldown>0) S.trollCooldown-=dt;
 
-    // Fake notification timer
     if(S.fakeNotifTimer>0){
         S.fakeNotifTimer-=dt;
         if(S.fakeNotifTimer<=0) fakeNotif.style.display='none';
@@ -931,6 +843,7 @@ function triggerRandomTroll(){
         revInd.style.display='block';
         showTroll('ĐIỀU KHIỂN ĐẢO NGƯỢC! ◀ = ▶ , ▶ = ◀', 2500);
         doShake(4,.5);
+        vibrate(200);
     } else if(roll<0.55){
         const colors=[0x00cc00,0x0000cc,0xcccc00,0xff6600,0x9900cc,0x00cccc,0xff00ff];
         const c=colors[Math.floor(Math.random()*colors.length)];
@@ -940,6 +853,7 @@ function triggerRandomTroll(){
     } else if(roll<0.65){
         showTroll('GAME OVER! ...À, chỉ là ảo giác', 1500);
         doShake(6,.3);
+        vibrate(100);
     } else if(roll<0.75){
         const n=FAKE_NOTIFS[Math.floor(Math.random()*FAKE_NOTIFS.length)];
         if(fakeNotifText) fakeNotifText.innerHTML='<span class="notif-icon">'+n.icon+'</span>'+n.text;
@@ -954,28 +868,39 @@ function triggerRandomTroll(){
         showTroll(msg, 2000);
         doShake(3,.2);
     } else {
-        // "Rain in desert" - brief fog burst
         scene.fog=new THREE.FogExp2(0x6699cc,0.02);
         showTroll('Mưa ở sa mạc?! ...À, ảo giác', 3000);
-        // FIX: fog reset uses correct density for device type
-        setTimeout(()=>{
+        // FIX: clear previous fog timeout before setting new one
+        if(fogTimeout) clearTimeout(fogTimeout);
+        fogTimeout=setTimeout(()=>{
             scene.fog=new THREE.FogExp2(0xD2B48C, isLowDevice?0.010:0.005);
+            fogTimeout=null;
         },4000);
     }
 }
 
+/* FIX: showTroll clears previous timeout to prevent leak */
 function showTroll(msg, duration){
     trollBox.textContent=msg;
     trollBox.className='t-box';
     trollPop.style.display='block';
-    setTimeout(()=>{trollPop.style.display='none';}, duration);
+    if(trollTimeout) clearTimeout(trollTimeout);
+    trollTimeout=setTimeout(()=>{
+        trollPop.style.display='none';
+        trollTimeout=null;
+    }, duration);
 }
 
+/* FIX: showAchievement clears previous timeout to prevent leak */
 function showAchievement(title, msg){
     msKm.textContent=title;
     msMsg.textContent=msg;
     msBanner.style.display='block';
-    setTimeout(()=>{msBanner.style.display='none';},4000);
+    if(achievementTimeout) clearTimeout(achievementTimeout);
+    achievementTimeout=setTimeout(()=>{
+        msBanner.style.display='none';
+        achievementTimeout=null;
+    },4000);
 }
 
 /* ───────────────────────────────────────────
@@ -987,6 +912,7 @@ function startGame(){
     hudEl.style.display='block';
     ctrlEl.style.display='block';
     S.phase='playing';
+    S.dead=false;
     S.t0=Date.now();
     S.dist=0;S.speed=C.CAR_BASE_SPEED;S.offRoadT=0;S.onRoad=true;
     S.deathCount=0;S.controlsReversed=false;S.reverseTimer=0;
@@ -994,7 +920,6 @@ function startGame(){
     S.forkShown=false;S.fakeNotifTimer=0;S.fakeDeathFlash=0;
     trollTimer=0;nextTrollAt=15;S.trollCooldown=0;
 
-    // FIX: Position camera immediately behind car (no black screen!)
     const r=carGroup.rotation.y;
     cam.position.set(
         carGroup.position.x - Math.sin(r)*C.CAM_DIST,
@@ -1007,9 +932,13 @@ function startGame(){
     startLoop();
 }
 
+/* FIX: prevent double death with S.dead flag */
 function triggerDeath(){
+    if(S.dead) return;
+    S.dead=true;
     S.phase='dead';
     S.deathCount++;
+    vibrate(300);
 
     let extra='';
     if(S.deathCount===1) extra=' (Lần đầu chết, rất bình thường)';
@@ -1043,6 +972,7 @@ function triggerEaster(){
 function restart(){
     stopLoop();
     S.phase='playing';
+    S.dead=false;
     S.dist=0;S.speed=C.CAR_BASE_SPEED;S.offRoadT=0;S.onRoad=true;
     S.t0=Date.now();S.forkShown=false;
     S.controlsReversed=false;S.reverseTimer=0;
@@ -1050,13 +980,16 @@ function restart(){
     S.fakeNotifTimer=0;S.fakeDeathFlash=0;
     trollTimer=0;nextTrollAt=15;S.trollCooldown=0;
 
-    // Reset car position and rotation
+    // FIX: clear all pending timeouts
+    if(trollTimeout){clearTimeout(trollTimeout);trollTimeout=null;}
+    if(achievementTimeout){clearTimeout(achievementTimeout);achievementTimeout=null;}
+    if(fogTimeout){clearTimeout(fogTimeout);fogTimeout=null;}
+
     carGroup.position.set(0,0,0);
     carGroup.rotation.y=0;
     carGroup.rotation.z=0;
     carBodyMesh.material.color.setHex(0xcc0000);
 
-    // Reset segments
     segData.forEach(s=>{s.grp.position.z=-s.idx*C.SEG_LEN;});
     obstaclePool.forEach(o=>{
         if(!o.userData.isObs)return;
@@ -1064,14 +997,8 @@ function restart(){
         o.position.x=side*(Math.random()*C.ROAD_W/2-1);
     });
 
-    // FIX: Position camera immediately behind car
-    const r=0; // car facing forward after reset
-    cam.position.set(
-        -Math.sin(r)*C.CAM_DIST,
-        C.CAM_H,
-        Math.cos(r)*C.CAM_DIST
-    );
-    cam.lookAt(Math.sin(r)*C.CAM_LOOK_AHEAD, 1.5, -Math.cos(r)*C.CAM_LOOK_AHEAD);
+    cam.position.set(0, C.CAM_H, C.CAM_DIST);
+    cam.lookAt(0, 1.5, 0);
 
     deathScr.style.display='none';eastScr.style.display='none';
     hudEl.style.display='block';ctrlEl.style.display='block';
@@ -1092,9 +1019,6 @@ window.resumeGame=function(){S.paused=false;clock.start();startLoop()};
 
 /* ── BOOT ── */
 init();
-// FIX: Don't start game loop at boot — wait for user to click play
-// The welcome screen is shown, and the loop starts when startGame() is called.
-// We still need to render one frame so the scene is visible behind welcome screen.
 renderer.render(scene, cam);
 
 })();

@@ -1,13 +1,22 @@
 # Add project specific ProGuard rules here.
 
-# WebView related
+# ── WebView JavaScript Bridge ──
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
 
-# Keep WebView class for JavaScript bridge
--keep class android.webkit.WebView { *; }
--keep class * extends android.webkit.WebViewClient { *; }
+# Keep the game's JS interface class (ProGuard may strip it)
+-keep class com.samacaogiac.game.GameActivity$GameJSInterface { *; }
 
-# Keep game activity and view classes
--keep class com.samacaogiac.game.** { *; }
+# Keep WebViewClient subclass (used by the game)
+-keep class com.samacaogiac.game.GameActivity$* { *; }
+
+# ── AndroidX / WebView ──
+-dontwarn android.webkit.WebView
+-dontwarn android.webkit.WebSettings
+
+# ── Three.js assets ──
+-keep class * extends java.lang.Object { *; }
+-keepclassmembers class * {
+    *** *(...);
+}

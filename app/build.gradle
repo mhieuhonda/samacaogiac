@@ -24,8 +24,8 @@ android {
         applicationId "com.samacaogiac.game"
         minSdk 24
         targetSdk 34
-        versionCode 3
-        versionName "0.3"
+        versionCode 4
+        versionName "0.4"
     }
 
     signingConfigs {
@@ -56,13 +56,15 @@ android {
         targetCompatibility JavaVersion.VERSION_11
     }
 
+    // FIX: removed viewBinding (not used) to reduce build overhead
     buildFeatures {
-        viewBinding true
+        viewBinding false
     }
 }
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.webkit:webkit:1.9.0'
+    // FIX: removed constraintlayout (not used in layouts)
+    implementation 'androidx.core:core:1.12.0'
 }

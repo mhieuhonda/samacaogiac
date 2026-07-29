@@ -42,44 +42,71 @@ jobs:
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
+      - name: Ensure Gradle wrapper exists
+        run: |
+          if [ ! -f "gradlew" ]; then
+            echo "ERROR: gradlew not found in tag ${{ github.event.release.tag_name }}"
+            exit 1
+          fi
+          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "ERROR: gradle-wrapper.jar not found"
+            exit 1
+          fi
+          chmod +x gradlew
+
       - name: Decode keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
 
-      - name: Fix build.gradle for compatibility
+      - name: Fix build issues for compatibility
         run: |
           # Remove allprojects block if it exists (conflicts with settings.gradle FAIL_ON_PROJECT_REPOS)
           sed -i '/^allprojects {/,/^}/d' build.gradle
           # Fix invalid proguard -keepassets directive
           sed -i '/^-keepassets/d' app/proguard-rules.pro
+          # Ensure gradle-wrapper.jar is executable
+          chmod +x gradlew
 
       - name: Build Release APK
+        env:
+          KEYSTORE_FILE: release.keystore
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          chmod +x gradlew
           ./gradlew assembleRelease --stacktrace
 
-      - name: Sign APK with apksigner
+      - name: Sign APK with apksigner (fallback if Gradle signing fails)
         run: |
-          APK_PATH=$(find app/build/outputs/apk/release -name "*-unsigned.apk" -o -name "*.apk" | head -1)
+          # Find the APK (could be signed or unsigned depending on Gradle config)
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
           if [ -z "$APK_PATH" ]; then
             echo "ERROR: No APK found!"
             exit 1
           fi
           echo "Found APK: $APK_PATH"
 
-          # Zipalign
-          ALIGNED_PATH="app/build/outputs/apk/release/aligned.apk"
-          ${ANDROID_HOME}/build-tools/34.0.0/zipalign -v 4 "$APK_PATH" "$ALIGNED_PATH" || cp "$APK_PATH" "$ALIGNED_PATH"
+          # Check if APK is already properly signed
+          if ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify "$APK_PATH" 2>/dev/null; then
+            echo "APK is already signed, skipping re-signing"
+            SIGNED_PATH="app/build/outputs/apk/release/SaMacAoGiac-signed.apk"
+            cp "$APK_PATH" "$SIGNED_PATH"
+          else
+            echo "APK is not signed, signing with apksigner..."
+            # Zipalign
+            ALIGNED_PATH="app/build/outputs/apk/release/aligned.apk"
+            ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f 4 "$APK_PATH" "$ALIGNED_PATH" || cp "$APK_PATH" "$ALIGNED_PATH"
 
-          # Sign with apksigner
-          SIGNED_PATH="app/build/outputs/apk/release/SaMacAoGiac-signed.apk"
-          ${ANDROID_HOME}/build-tools/34.0.0/apksigner sign \
-            --ks app/release.keystore \
-            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
-            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-            --out "$SIGNED_PATH" \
-            "$ALIGNED_PATH"
+            # Sign with apksigner
+            SIGNED_PATH="app/build/outputs/apk/release/SaMacAoGiac-signed.apk"
+            ${ANDROID_HOME}/build-tools/34.0.0/apksigner sign \
+              --ks app/release.keystore \
+              --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+              --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+              --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+              --out "$SIGNED_PATH" \
+              "$ALIGNED_PATH"
+          fi
 
           # Verify
           ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify --print-certs "$SIGNED_PATH"

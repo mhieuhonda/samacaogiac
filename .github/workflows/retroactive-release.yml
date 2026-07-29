@@ -84,14 +84,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout MAIN branch first to get gradlew and wrapper files
       - name: Checkout main branch (for build tools)
         uses: actions/checkout@v4
         with:
           ref: main
           path: main_checkout
 
-      # Step 2: Checkout the specific TAG for source code
       - name: Checkout code at tag ${{ matrix.release.tag }}
         uses: actions/checkout@v4
         with:
@@ -122,11 +120,17 @@ jobs:
 
       - name: Copy build tools from main to tag checkout
         run: |
-          # Copy gradlew and wrapper files from main branch
+          # Copy gradlew and wrapper files from main branch if missing
           if [ ! -f "tag_checkout/gradlew" ]; then
             cp main_checkout/gradlew tag_checkout/
             cp main_checkout/gradlew.bat tag_checkout/ 2>/dev/null || true
+          fi
+          if [ ! -f "tag_checkout/gradle/wrapper/gradle-wrapper.jar" ]; then
+            mkdir -p tag_checkout/gradle/wrapper/
             cp main_checkout/gradle/wrapper/gradle-wrapper.jar tag_checkout/gradle/wrapper/
+          fi
+          if [ ! -f "tag_checkout/gradle/wrapper/gradle-wrapper.properties" ]; then
+            cp main_checkout/gradle/wrapper/gradle-wrapper.properties tag_checkout/gradle/wrapper/ 2>/dev/null || true
           fi
           chmod +x tag_checkout/gradlew
 
@@ -146,33 +150,44 @@ jobs:
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
 
       - name: Build Release APK
+        env:
+          KEYSTORE_FILE: release.keystore
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           cd tag_checkout
           ./gradlew assembleRelease --stacktrace
 
-      - name: Sign APK with apksigner
+      - name: Sign APK with apksigner (fallback if Gradle signing fails)
         run: |
           cd tag_checkout
-          APK_PATH=$(find app/build/outputs/apk/release -name "*-unsigned.apk" -o -name "*.apk" | head -1)
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
           if [ -z "$APK_PATH" ]; then
             echo "ERROR: No APK found!"
             exit 1
           fi
           echo "Found APK: $APK_PATH"
 
-          # Zipalign
-          ALIGNED_PATH="app/build/outputs/apk/release/aligned.apk"
-          ${ANDROID_HOME}/build-tools/34.0.0/zipalign -v 4 "$APK_PATH" "$ALIGNED_PATH" || cp "$APK_PATH" "$ALIGNED_PATH"
+          # Check if APK is already properly signed
+          if ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify "$APK_PATH" 2>/dev/null; then
+            echo "APK is already signed, skipping re-signing"
+            SIGNED_PATH="app/build/outputs/apk/release/SaMacAoGiac-signed.apk"
+            cp "$APK_PATH" "$SIGNED_PATH"
+          else
+            echo "APK is not signed, signing with apksigner..."
+            ALIGNED_PATH="app/build/outputs/apk/release/aligned.apk"
+            ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f 4 "$APK_PATH" "$ALIGNED_PATH" || cp "$APK_PATH" "$ALIGNED_PATH"
 
-          # Sign with apksigner
-          SIGNED_PATH="app/build/outputs/apk/release/SaMacAoGiac-signed.apk"
-          ${ANDROID_HOME}/build-tools/34.0.0/apksigner sign \
-            --ks app/release.keystore \
-            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
-            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-            --out "$SIGNED_PATH" \
-            "$ALIGNED_PATH"
+            SIGNED_PATH="app/build/outputs/apk/release/SaMacAoGiac-signed.apk"
+            ${ANDROID_HOME}/build-tools/34.0.0/apksigner sign \
+              --ks app/release.keystore \
+              --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+              --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+              --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+              --out "$SIGNED_PATH" \
+              "$ALIGNED_PATH"
+          fi
 
           # Verify
           ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify --print-certs "$SIGNED_PATH"

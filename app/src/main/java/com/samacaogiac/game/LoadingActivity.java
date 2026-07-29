@@ -3,6 +3,7 @@ package com.samacaogiac.game;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -11,6 +12,9 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import java.io.InputStream;
 
@@ -43,11 +47,10 @@ public class LoadingActivity extends AppCompatActivity {
 
         // Set loading background image from assets
         ImageView loadingBg = findViewById(R.id.loadingBackground);
-        try {
-            InputStream is = getAssets().open("manhinhload.png");
+        // FIX: use try-with-resources to properly close InputStream
+        try (InputStream is = getAssets().open("manhinhload.png")) {
             Bitmap bitmap = BitmapFactory.decodeStream(is);
             loadingBg.setImageBitmap(bitmap);
-            is.close();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -63,13 +66,11 @@ public class LoadingActivity extends AppCompatActivity {
         handler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                // Random progress increment (not always smooth - more natural)
                 progress += (int)(Math.random() * 10) + 1;
                 if (progress > 100) progress = 100;
 
                 progressBar.setProgress(progress);
 
-                // Update loading message based on progress
                 int msgIndex = Math.min(
                     (progress * loadingMessages.length) / 100,
                     loadingMessages.length - 1
@@ -85,7 +86,6 @@ public class LoadingActivity extends AppCompatActivity {
                         finish();
                     }, 600);
                 } else {
-                    // Variable delay for realistic loading feel
                     int delay = progress < 30 ? 80 : (progress < 70 ? 50 : 30);
                     delay += (int)(Math.random() * 40);
                     handler.postDelayed(this, delay);
@@ -95,14 +95,23 @@ public class LoadingActivity extends AppCompatActivity {
     }
 
     private void hideSystemUI() {
-        getWindow().getDecorView().setSystemUiVisibility(
-            android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
-            | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-        );
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+            WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+            if (controller != null) {
+                controller.hide(WindowInsetsCompat.Type.systemBars());
+                controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        } else {
+            getWindow().getDecorView().setSystemUiVisibility(
+                android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            );
+        }
     }
 
     @Override

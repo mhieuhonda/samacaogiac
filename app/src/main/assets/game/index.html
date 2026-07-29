@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#111827">
     <title>Sa Mạc Ảo Giác</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
@@ -31,39 +32,43 @@
         .w-title{color:#f59e0b;font-size:28px;font-weight:800;letter-spacing:4px;margin-bottom:6px;text-shadow:0 4px 20px rgba(245,158,11,.3)}
         .w-sub{color:#94a3b8;font-size:12px;letter-spacing:2px;margin-bottom:28px}
         .w-msg{color:#e2e8f0;font-size:16px;margin-bottom:32px;text-align:center;line-height:1.7;padding:0 28px}
-        .play-btn{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:18px;font-weight:800;padding:13px 48px;border-radius:28px;border:none;letter-spacing:3px;box-shadow:0 4px 24px rgba(245,158,11,.4);animation:pulse 2s ease-in-out infinite}
+        .play-btn{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:18px;font-weight:800;padding:13px 48px;border-radius:28px;border:none;letter-spacing:3px;box-shadow:0 4px 24px rgba(245,158,11,.4);animation:pulse 2s ease-in-out infinite;cursor:pointer}
         .play-btn:active{transform:scale(.94)}
         @keyframes pulse{0%,100%{box-shadow:0 4px 24px rgba(245,158,11,.4)}50%{box-shadow:0 6px 36px rgba(245,158,11,.7)}}
         /* ── DEATH ── */
         #deathScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.88);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
         .d-t{color:#ef4444;font-size:28px;font-weight:800;letter-spacing:2px;margin-bottom:10px}
         .d-d{color:#fbbf24;font-size:18px;margin-bottom:24px;text-align:center;padding:0 20px;line-height:1.5}
-        .d-b{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;font-size:16px;font-weight:700;padding:11px 40px;border-radius:24px;border:none;letter-spacing:2px}
+        .d-b{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;font-size:16px;font-weight:700;padding:11px 40px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer}
         .d-b:active{transform:scale(.94)}
         /* ── EASTER ── */
         #easterScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:300;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
         .e-m{color:#fbbf24;font-size:22px;font-weight:700;margin-bottom:22px;text-align:center;line-height:1.6;padding:0 24px}
-        .e-b{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:16px;font-weight:700;padding:11px 40px;border-radius:24px;border:none;letter-spacing:2px}
-        /* ── TROLL POPUPS (FIX: moved to bottom so it doesn't block view) ── */
+        .e-b{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:16px;font-weight:700;padding:11px 40px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer}
+        /* ── TROLL POPUPS ── */
         #trollPopup{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);z-index:50;display:none;pointer-events:none;text-align:center;animation:trollIn .3s ease-out}
         @keyframes trollIn{0%{opacity:0;transform:translateX(-50%) scale(.7)}100%{opacity:1;transform:translateX(-50%) scale(1)}}
         .t-box{background:rgba(0,0,0,.75);color:#fbbf24;font-size:13px;font-weight:700;padding:8px 16px;border-radius:10px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);letter-spacing:.5px;line-height:1.4;max-width:260px}
         .t-box.troll-achievement{border:2px solid #f59e0b;background:rgba(17,24,39,.85);color:#fff}
         .t-ach-title{color:#f59e0b;font-size:12px;letter-spacing:2px;margin-bottom:4px}
         .t-ach-body{font-size:13px;color:#e2e8f0}
-        /* ── FAKE NOTIFICATION (FIX: removed duplicate id) ── */
+        /* ── FAKE NOTIFICATION ── */
         #fakeNotif{position:absolute;top:30px;left:50%;transform:translateX(-50%);z-index:55;display:none;pointer-events:none;background:rgba(17,24,39,.9);color:#e2e8f0;font-size:11px;padding:8px 16px;border-radius:8px;border-left:3px solid #f59e0b;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:notifSlide .4s ease-out;max-width:260px}
         @keyframes notifSlide{0%{opacity:0;transform:translateX(-50%) translateY(-20px)}100%{opacity:1;transform:translateX(-50%) translateY(0)}}
         .notif-icon{color:#f59e0b;font-weight:800;margin-right:6px}
         /* ── CONTROL REVERSAL INDICATOR ── */
-        #reverseIndicator{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);z-index:25;display:none;pointer-events:none;color:#ef4444;font-size:14px;font-weight:700;background:rgba(0,0,0,.6);padding:6px 14px;border-radius:10px;animation:revBlink .5s step-end infinite}
+        #reverseIndicator{position:absolute;top:50px;left:50%;transform:translateX(-50%);z-index:25;display:none;pointer-events:none;color:#ef4444;font-size:14px;font-weight:700;background:rgba(0,0,0,.6);padding:6px 14px;border-radius:10px;animation:revBlink .5s step-end infinite}
         @keyframes revBlink{0%,100%{opacity:1}50%{opacity:0}}
-        /* ── MILESTONE BANNER (FIX: moved to top so it doesn't block road) ── */
+        /* ── MILESTONE BANNER ── */
         #milestoneBanner{position:absolute;top:50px;left:50%;transform:translateX(-50%);z-index:40;display:none;pointer-events:none}
         .ms-box{background:rgba(0,0,0,.7);padding:10px 20px;border-radius:12px;border:2px solid #f59e0b;text-align:center;animation:msIn .4s ease-out}
         @keyframes msIn{0%{opacity:0;transform:scale(.6)}100%{opacity:1;transform:scale(1)}}
         .ms-km{color:#fbbf24;font-size:18px;font-weight:800}
         .ms-msg{color:#e2e8f0;font-size:12px;margin-top:4px}
+        /* ── REDUCED MOTION (a11y) ── */
+        @media (prefers-reduced-motion: reduce){
+            *{animation-duration:0.01ms!important;transition-duration:0.01ms!important}
+        }
     </style>
 </head>
 <body>
@@ -83,28 +88,27 @@
     </div>
     <div id="reverseIndicator">⚠ ĐIỀU KHIỂN ĐẢO NGƯỢC!</div>
     <div id="trollPopup"><div class="t-box" id="trollBox"></div></div>
-    <!-- FIX: removed duplicate id, now has proper structure -->
     <div id="fakeNotif"><span id="fakeNotifText"></span></div>
     <div id="milestoneBanner"><div class="ms-box"><div class="ms-km" id="msKm"></div><div class="ms-msg" id="msMsg"></div></div></div>
 
     <!-- Welcome -->
     <div id="welcomeScreen">
-        <img src="../favicon.svg" class="w-logo" alt="Logo">
+        <img src="../favicon.svg" class="w-logo" alt="Sa Mạc Ảo Giác Logo">
         <div class="w-title">SA MẠC ẢO GIÁC</div>
         <div class="w-sub">DESERT MIRAGE</div>
         <div class="w-msg">Chào mừng bạn đến với game của Hieu Louis</div>
-        <button class="play-btn" id="playBtn">CHƠI NGAY</button>
+        <button class="play-btn" id="playBtn" aria-label="Bắt đầu chơi">CHƠI NGAY</button>
     </div>
     <!-- Death -->
-    <div id="deathScreen">
+    <div id="deathScreen" role="dialog" aria-label="Game Over">
         <div class="d-t">XE ĐÃ HỎNG!</div>
         <div class="d-d" id="deathDist">Bạn đã đi được 0.00km rồi, cố lên!</div>
-        <button class="d-b" id="replayBtn">CHƠI LẠI</button>
+        <button class="d-b" id="replayBtn" aria-label="Chơi lại">CHƠI LẠI</button>
     </div>
     <!-- Easter Egg -->
-    <div id="easterScreen">
+    <div id="easterScreen" role="dialog" aria-label="Easter Egg">
         <div class="e-m">🎉 Chúc mừng bạn đã lãng phí 1 tiếng của cuộc đời</div>
-        <button class="e-b" id="easterBtn">CHƠI LẠI</button>
+        <button class="e-b" id="easterBtn" aria-label="Chơi lại">CHƠI LẠI</button>
     </div>
 
     <script src="three.min.js"></script>
