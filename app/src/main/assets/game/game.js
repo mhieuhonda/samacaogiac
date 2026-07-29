@@ -1,4 +1,41 @@
 // ============================================================
+// SA MẠC ẢO GIÁC — Game Engine v0.8
+// ============================================================
+// Major v0.8 changes:
+//   * CRITICAL FIX — the "press CHƠI NGAY → nothing happens" bug:
+//     startGame() checked `musicPrompt.style.display !== 'none'` to
+//     detect whether the prompt was already visible. But .style only
+//     reflects INLINE styles — the CSS rule `display:none` is NOT
+//     inline, so .style.display returns "" (empty string). The check
+//     `"" !== 'none'` is TRUE → function returned early → first tap
+//     did nothing. Fixed with an explicit _musicPromptVisible flag.
+//
+//   * CRITICAL UI FIX — pauseBtn, settingsBtn, cameraModeBtn,
+//     boostBar, speedoWrap all had `display:none` in CSS and were
+//     NEVER set to `display:flex` anywhere. Players could not pause,
+//     open settings, change camera, see the boost bar, or see the
+//     speedometer during gameplay. Added showGameUI() helper and
+//     called it from startGameAfterMusic(), restart(), and the quit
+//     button handler.
+//
+//   * STATS PERSISTENCE — bestDist, totalKm, deathCount were reset
+//     to 0 on every startGameAfterMusic(), losing the persisted
+//     values. Now they're loaded from SharedPreferences (via Java
+//     bridge in onPageFinished) and NOT reset on game start.
+//
+//   * TIMER FIX — HUD timer used Date.now()-S.t0 which counts
+//     wall-clock time including pause. Now uses S.timeAlive (accumulated
+//     dt) which only counts active gameplay.
+//
+//   * UNIT FIX — onGameDeath() was passing S.topSpeed (m/s) as the
+//     `topSpeedKmh` parameter. Now correctly multiplies by 3.6.
+//
+//   * NPE FIX — updateAudio() could access audioCtx.currentTime when
+//     audioCtx was null. Added null guard.
+//
+// All v0.7 features preserved. See CHANGELOG at end of file.
+// ============================================================
+// ============================================================
 // SA MẠC ẢO GIÁC — Game Engine v0.6
 // ============================================================
 // Major v0.6 changes:
@@ -150,6 +187,13 @@ let groundMeshes = [];
 let isLowDevice = false;
 let _shadowEnabled = false;  // cached at init
 
+/* ── MUSIC PROMPT STATE ── */
+// v0.8 FIX: must be an explicit flag, NOT inferred from
+// musicPrompt.style.display — that property returns "" (empty string)
+// when the display:none comes from a CSS rule rather than inline style,
+// which caused the first-tap dead-end bug.
+let _musicPromptVisible = false;
+
 /* ── TIMEOUT TRACKING ── */
 let trollTimeout = null;
 let achievementTimeout = null;
@@ -183,7 +227,11 @@ function initAudio(){
 
 function updateAudio(){
     if(!audioCtx || !engineOsc || !S.audioEnabled) {
-        if(engineGain && S.audioEnabled === false && lastEngineVol !== 0) {
+        // v0.8 FIX: added `audioCtx` to the guard — previously this
+        // branch could access audioCtx.currentTime when audioCtx was
+        // null (NPE) if engineGain existed, sound was disabled, and
+        // lastEngineVol was non-zero.
+        if(engineGain && audioCtx && S.audioEnabled === false && lastEngineVol !== 0) {
             engineGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
             lastEngineVol = 0;
         }
@@ -344,10 +392,35 @@ addClick('replayBtn', restart);
 addClick('easterBtn', restart);
 addClick('pauseBtn', togglePause);
 addClick('resumeBtn', ()=>{ if(S.paused) togglePause(); });
-addClick('quitBtn', ()=>{ if(S.paused){ S.phase='welcome'; $('welcomeScreen').style.display='flex'; deathScr.style.display='none'; eastScr.style.display='none'; pauseScr.style.display='none'; hudEl.style.display='none'; ctrlEl.style.display='none'; stopLoop(); resetInput(); } });
-// v0.6: music prompt buttons
-addClick('musicYes', ()=>{ if(musicPrompt) musicPrompt.style.display='none'; promptMusic(); });
-addClick('musicNo',  ()=>{ if(musicPrompt) musicPrompt.style.display='none'; startGameAfterMusic(false); });
+// v0.8 FIX: hide ALL gameplay UI when quitting to welcome screen.
+// Previously only hud + ctrl were hidden, leaving pauseBtn/settingsBtn/
+// cameraModeBtn/boostBar/speedoWrap visible (well, they were never
+// shown in the first place due to the showGameUI bug, but this makes
+// the teardown correct).
+addClick('quitBtn', ()=>{
+    if(S.paused){
+        S.phase='welcome';
+        $('welcomeScreen').style.display='flex';
+        deathScr.style.display='none';
+        eastScr.style.display='none';
+        pauseScr.style.display='none';
+        hudEl.style.display='none';
+        ctrlEl.style.display='none';
+        showGameUI(false);
+        offVig.style.display='none';
+        revInd.style.display='none';
+        fakeNotif.style.display='none';
+        trollPop.style.display='none';
+        msBanner.style.display='none';
+        stopLoop();
+        resetInput();
+    }
+});
+// v0.8 FIX: reset _musicPromptVisible flag when user picks a choice.
+// Previously the flag was never reset, so after one game the prompt
+// could not be shown again.
+addClick('musicYes', ()=>{ _musicPromptVisible=false; if(musicPrompt) musicPrompt.style.display='none'; promptMusic(); });
+addClick('musicNo',  ()=>{ _musicPromptVisible=false; if(musicPrompt) musicPrompt.style.display='none'; startGameAfterMusic(false); });
 addClick('musicToggleBtn', toggleMusicFromButton);
 addClick('cameraModeBtn', cycleCameraMode);
 addClick('settingsBtn', openSettings);
@@ -366,7 +439,8 @@ document.addEventListener('keydown', e=>{
     if(e.key==='ArrowDown'||e.key==='s'||e.key==='S') inp.brake=true;
     if(e.key==='Shift') inp.boost=true;
     if(e.key===' '||e.key==='Enter') {
-        if(S.phase==='welcome' && (!musicPrompt || musicPrompt.style.display==='none')) startGame();
+        // v0.8 FIX: use the explicit flag instead of inspecting style.display.
+        if(S.phase==='welcome' && !_musicPromptVisible) startGame();
         else if(S.phase==='dead') restart();
         else if(S.phase==='easter') restart();
     }
@@ -556,14 +630,34 @@ function togglePause(){
         pauseScr.style.display='flex';
         hudEl.style.display='none';
         ctrlEl.style.display='none';
+        // v0.8: hide gameplay UI buttons during pause (clean look)
+        showGameUI(false);
         if(audioCtx) audioCtx.suspend();
     } else {
         pauseScr.style.display='none';
         hudEl.style.display='block';
         ctrlEl.style.display='block';
+        // v0.8: re-show gameplay UI buttons on resume
+        showGameUI(true);
         if(audioCtx) audioCtx.resume();
         clock.start();
     }
+}
+
+/* ── v0.8: GAMEPLAY UI VISIBILITY ── */
+// Centralised helper to show/hide the in-game buttons and bars that
+// were previously never displayed due to the missing display:flex call.
+// pauseBtn / settingsBtn / cameraModeBtn use flex (they have
+// align-items:center; justify-content:center in CSS).
+// boostBar / speedoWrap use block.
+function showGameUI(show){
+    const flexDisp = show ? 'flex' : 'none';
+    const blockDisp = show ? 'block' : 'none';
+    if(pauseBtn)      pauseBtn.style.display      = flexDisp;
+    if(settingsBtn)   settingsBtn.style.display   = flexDisp;
+    if(cameraModeBtn) cameraModeBtn.style.display = flexDisp;
+    if(boostBar)      boostBar.style.display      = blockDisp;
+    if(speedoWrap)    speedoWrap.style.display    = blockDisp;
 }
 
 /* ───────────────────────────────────────────
@@ -1393,7 +1487,11 @@ function updateHUD(dt){
     const speedKmh = Math.round(S.speed*3.6);
     spdH.textContent=speedKmh+' km/h';
     dstH.textContent=S.dist.toFixed(2)+' km';
-    const elapsed=Math.floor((Date.now()-S.t0)/1000);
+    // v0.8 FIX: use S.timeAlive (accumulated dt) instead of Date.now()-S.t0.
+    // The old formula counted wall-clock time, so pausing for 30s made
+    // the timer jump by 30s — misleading. timeAlive only advances
+    // during active gameplay (the game loop returns early when paused).
+    const elapsed=Math.floor(S.timeAlive);
     const m=Math.floor(elapsed/60), s=elapsed%60;
     tmrH.textContent=m+':'+(s<10?'0':'')+s;
     // v0.6: top speed / total km
@@ -1728,13 +1826,21 @@ function startGame(){
     if(initFailed){
         return;
     }
-    // v0.6: prompt for music before starting
-    if(musicPrompt && musicPrompt.style.display !== 'none') {
-        // Already showing prompt, wait for user
+    // v0.8 FIX (THE main bug): use an explicit flag instead of inspecting
+    // musicPrompt.style.display. The old check
+    //   `musicPrompt.style.display !== 'none'`
+    // returned TRUE on the very first tap because .style.display is ""
+    // (empty string) when `display:none` comes from a CSS rule rather
+    // than inline style. That made the function return early and the
+    // first "CHƠI NGAY" tap did nothing — exactly the freeze the user
+    // reported.
+    if(_musicPromptVisible) {
+        // Prompt already shown — wait for the user to pick Yes/No.
         return;
     }
     if(musicPrompt) {
         musicPrompt.style.display = 'flex';
+        _musicPromptVisible = true;
         return;
     }
     startGameAfterMusic(false);
@@ -1755,20 +1861,34 @@ function startGameAfterMusic(musicPicked){
     canvas.style.display='block';
     hudEl.style.display='block';
     ctrlEl.style.display='block';
+    // v0.8 FIX: show the gameplay UI buttons that were previously
+    // never displayed (pauseBtn, settingsBtn, cameraModeBtn, boostBar,
+    // speedoWrap). Without this call the player could not pause,
+    // open settings, change camera, see the boost bar or the
+    // speedometer during gameplay.
+    showGameUI(true);
     S.phase='playing';
     S.dead=false;
     S.paused=false;
     S.t0=Date.now();
     S.dist=0;S.speed=C.CAR_BASE_SPEED;S.offRoadT=0;S.onRoad=true;
-    S.deathCount=0;S.controlsReversed=false;S.reverseTimer=0;
+    // v0.8 FIX: do NOT reset deathCount / bestDist / totalKm here —
+    // these are all-time stats persisted in SharedPreferences. Resetting
+    // them on every game start destroyed the user's saved progress.
+    S.controlsReversed=false;S.reverseTimer=0;
     S.carColorTimer=0;S.shakeTimer=0;S.milestoneShown={};
     S.forkShown=false;S.fakeNotifTimer=0;S.fakeDeathFlash=0;
-    S.bestDist=0;
     S.gravityFlip=0;S.invisibleMode=0;S.carShrink=0;
     S.topSpeed=0;S.avgSpeed=0;S.speedSamples=0;
-    S.totalKm=0;S.timeAlive=0;S.nearMissCount=0;S.coinsCollected=0;
+    // v0.8: only reset per-run stats here (timeAlive, nearMiss, coins).
+    // totalKm is all-time and is loaded from prefs at page load.
+    S.timeAlive=0;S.nearMissCount=0;S.coinsCollected=0;
     S.boostMeter=0;S.boostActive=0;
-    S.musicPlaying = musicPicked;
+    // v0.8 FIX: don't pre-set musicPlaying=true when the picker hasn't
+    // returned yet. updateMusicPoll() will set it to true once the
+    // native side confirms music is actually playing. This avoids a
+    // brief window where the engine is ducked but no music is audible.
+    S.musicPlaying = false;
     trollTimer=0;nextTrollAt=15;S.trollCooldown=0;
 
     const r=carGroup.rotation.y;
@@ -1834,7 +1954,11 @@ function triggerDeath(){
     // v0.6: persist stats via Android bridge
     try {
         if(typeof AndroidBridge !== 'undefined' && AndroidBridge.onGameDeath) {
-            AndroidBridge.onGameDeath(S.dist, S.topSpeed, S.coinsCollected, S.nearMissCount, S.timeAlive);
+            // v0.8 FIX: S.topSpeed is in m/s; onGameDeath expects km/h
+            // (Java side logs it as "top=%.0fkm/h"). Previously passed
+            // raw m/s, so a 52 m/s top speed was logged as "52 km/h"
+            // instead of the correct "187 km/h".
+            AndroidBridge.onGameDeath(S.dist, S.topSpeed*3.6, S.coinsCollected, S.nearMissCount, S.timeAlive);
         }
         // v0.6: fire Lua hook
         if(typeof AndroidBridge !== 'undefined' && AndroidBridge.fireLuaEvent) AndroidBridge.fireLuaEvent('on_death');
@@ -1879,7 +2003,8 @@ function restart(){
     // v0.7: don't attempt restart if init failed.
     if(initFailed || !carGroup || !cam) return;
     stopLoop();
-    const prevBest = S.bestDist;
+    // v0.8: bestDist is all-time (loaded from prefs at page load) —
+    // no need to save/restore, just don't touch it.
     S.phase='playing';
     S.dead=false;
     S.paused=false;
@@ -1888,10 +2013,11 @@ function restart(){
     S.controlsReversed=false;S.reverseTimer=0;
     S.carColorTimer=0;S.shakeTimer=0;S.milestoneShown={};
     S.fakeNotifTimer=0;S.fakeDeathFlash=0;
-    S.bestDist=prevBest;
     S.gravityFlip=0;S.invisibleMode=0;S.carShrink=0;
     S.topSpeed=0;S.avgSpeed=0;S.speedSamples=0;
-    S.nearMissCount=0;S.coinsCollected=0;
+    // v0.8: reset only per-run stats. totalKm / bestDist / deathCount
+    // are all-time and must survive restart.
+    S.timeAlive=0;S.nearMissCount=0;S.coinsCollected=0;
     S.boostMeter=0;S.boostActive=0;
     trollTimer=0;nextTrollAt=15;S.trollCooldown=0;
 
@@ -1932,6 +2058,8 @@ function restart(){
 
     deathScr.style.display='none';eastScr.style.display='none';pauseScr.style.display='none';
     hudEl.style.display='block';ctrlEl.style.display='block';
+    // v0.8: re-show gameplay UI buttons on restart too.
+    showGameUI(true);
     offVig.style.display='none';revInd.style.display='none';
     fakeNotif.style.display='none';trollPop.style.display='none';msBanner.style.display='none';
     updateCoinDisplay();
@@ -1989,7 +2117,50 @@ try {
 /* ============================================================
    CHANGELOG
    ============================================================
-   v0.7 — CRITICAL BUG FIXES (the "press play → freeze" fix)
+   v0.8 — THE REAL "press play → freeze" FIX + UI visibility fix
+   ------------------------------------------------------------
+   1. **startGame() first-tap dead-end** — the v0.7 changelog claimed
+      the freeze was fixed, but it was NOT. The actual root cause was
+      in `startGame()`:
+        if(musicPrompt && musicPrompt.style.display !== 'none') return;
+      `element.style.display` only returns INLINE styles. The CSS rule
+      `#musicPrompt{display:none}` is NOT inline, so on first tap
+      `musicPrompt.style.display` is `""` (empty string), the check
+      `"" !== 'none'` is TRUE, and the function returned early.
+      Result: first tap on "CHƠI NGAY" did NOTHING. Fixed with an
+      explicit `_musicPromptVisible` flag.
+   2. **Missing gameplay UI buttons** — pauseBtn, settingsBtn,
+      cameraModeBtn, boostBar, speedoWrap all had `display:none` in
+      CSS and were NEVER set to `display:flex` anywhere in the code.
+      Players could not pause, open settings, change camera, see the
+      boost bar, or see the speedometer during gameplay. Added
+      `showGameUI(show)` helper and called it from startGameAfterMusic,
+      restart, togglePause, and the quit button handler.
+   3. **Stats reset on every game start** — bestDist, totalKm, and
+      deathCount were all reset to 0 in `startGameAfterMusic()`,
+      destroying the persisted values loaded from SharedPreferences.
+      Now they're loaded once at page load and never reset.
+   4. **Best distance unit mismatch** — `SettingsManager.setBestDistance`
+      stores meters, but `onPageFinished` injected the raw value into
+      `S.bestDist` (which is in km). A 1km best showed as "1000.00 km".
+      Now divides by 1000 before injecting.
+   5. **HUD timer counted pause time** — `Date.now()-S.t0` is wall-clock,
+      so pausing for 30s made the timer jump by 30s. Now uses
+      `S.timeAlive` (accumulated dt) which only advances during active
+      gameplay.
+   6. **onGameDeath unit mismatch** — `S.topSpeed` is in m/s, but
+      `onGameDeath(topSpeedKmh)` expects km/h. A 52 m/s top speed was
+      logged as "52 km/h" instead of "187 km/h". Now multiplies by 3.6.
+   7. **updateAudio NPE** — if `audioCtx` was null but `engineGain`
+      existed and sound was disabled, the early-return branch accessed
+      `audioCtx.currentTime` → NPE. Added `audioCtx` to the guard.
+   8. **Premature music ducking** — `startGameAfterMusic(true)` set
+      `S.musicPlaying=true` before the music picker had returned,
+      causing a brief window of ducked engine with no music. Now
+      always sets `S.musicPlaying=false` and lets `updateMusicPoll`
+      detect real playback.
+
+   v0.7 — Critical Bug Fixes (preserved from previous release)
    ------------------------------------------------------------
    1. **Token-based gameLoop** — previously, `stopLoop()+startLoop()`
       (called by `restart()` and the pause-screen Quit button) left

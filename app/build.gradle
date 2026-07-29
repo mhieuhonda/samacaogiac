@@ -27,8 +27,8 @@ android {
         applicationId "com.samacaogiac.game"
         minSdk 24
         targetSdk 34
-        versionCode 7
-        versionName "0.7"
+        versionCode 8
+        versionName "0.8"
 
         // v0.6: ABIs — arm64-v8a (modern), armeabi-v7a (legacy 32-bit),
         // x86_64 (emulator). Skip x86 (32-bit) — not used in production.

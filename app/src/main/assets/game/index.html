@@ -173,7 +173,11 @@
     </div>
 
     <!-- Music Prompt -->
-    <div id="musicPrompt" role="dialog" aria-label="Phát nhạc">
+    <!-- v0.8: inline style="display:none" as a defensive measure so that
+         element.style.display returns "none" (not "") on first inspection.
+         The JS code no longer relies on this (it uses an explicit flag),
+         but this prevents any future regression of the same class. -->
+    <div id="musicPrompt" role="dialog" aria-label="Phát nhạc" style="display:none">
         <div class="mp-title">🎵 PHÁT NHẠC KHI CHƠI?</div>
         <div class="mp-sub">Chọn nhạc từ điện thoại — tiếng động cơ sẽ tự nhỏ lại.<br><small>(Bạn có thể đổi ý sau trong cài đặt)</small></div>
         <div class="mp-btns">

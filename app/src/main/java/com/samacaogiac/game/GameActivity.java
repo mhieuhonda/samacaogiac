@@ -135,11 +135,31 @@ public class GameActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 hideSystemUI();
-                // v0.6: inject any persisted best distance into the JS state
-                float best = SettingsManager.getBestDistance(getApplicationContext());
-                if (best > 0) {
-                    safeEvalJs("if(window.S)S.bestDist=" + best + ";");
-                }
+                // v0.8 FIX: inject persisted all-time stats into the JS state.
+                // Previously only bestDist was injected, and it was injected
+                // in METERS while the JS side expects KM — so a 1km best
+                // displayed as "1000.00 km". Now we convert meters→km and
+                // also inject totalKm and deathCount so the HUD shows the
+                // correct lifetime values from the very first frame.
+                try {
+                    float bestMeters = SettingsManager.getBestDistance(getApplicationContext());
+                    float bestKm = bestMeters / 1000f;
+                    float totalKm = SettingsManager.getTotalKm(getApplicationContext());
+                    int totalDeaths = SettingsManager.getTotalDeaths(getApplicationContext());
+                    StringBuilder sb = new StringBuilder();
+                    if (bestKm > 0) {
+                        sb.append("if(window.S)S.bestDist=").append(bestKm).append(";");
+                    }
+                    if (totalKm > 0) {
+                        sb.append("if(window.S)S.totalKm=").append(totalKm).append(";");
+                    }
+                    if (totalDeaths > 0) {
+                        sb.append("if(window.S)S.deathCount=").append(totalDeaths).append(";");
+                    }
+                    if (sb.length() > 0) {
+                        safeEvalJs(sb.toString());
+                    }
+                } catch (Throwable ignored) {}
             }
         });
 
