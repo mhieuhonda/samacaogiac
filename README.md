@@ -2,7 +2,7 @@
 
 > **Desert Mirage** — Game đua xe sa mạc góc nhìn thứ ba cho Android, với tính năng troll
 
-[![Version](https://img.shields.io/badge/version-0.3-orange.svg)](https://github.com/mhieuhonda/samacaogiac/releases)
+[![Version](https://img.shields.io/badge/version-0.4-orange.svg)](https://github.com/mhieuhonda/samacaogiac/releases)
 [![Platform](https://img.shields.io/badge/platform-Android%207.0%2B-green.svg)](https://developer.android.com)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -15,71 +15,96 @@
 ### ✨ Tính năng chính
 
 #### 🎮 Gameplay
-- 🚗 **Xe ô tô 3D** — Model chi tiết (body, cabin, windshield, spoiler, exhaust, grille, racing stripe, license plate, door lines, fog lights...) — **Scale 1.3x lớn hơn v0.2**
-- 🛣️ **Đường rộng hơn** — ROAD_W: 14 (tăng từ 8), dễ điều khiển hơn
-- 🏜️ **Sa mạc chân thực** — Cây xương rồng, đá, đồi cát, cây chết, lạc đà ma trên đường
-- 🔀 **Ngã rẽ thật** — Fork road có barrier collision! Đi thẳng = đâm barrier = chết, phải rẽ trái/phải
+- 🚗 **Xe ô tô 3D** — Model chi tiết, scale 1.3x, nhìn rõ ràng
+- 🛣️ **Đường rộng** — ROAD_W: 14, dễ điều khiển hơn
+- 🔀 **Ngã rẽ thật** — Barrier collision! Đi thẳng = đâm barrier = chết
 - 💀 **Obstacle collision** — Đá trên đường + lạc đà chết, va chạm = game over
-- 🚧 **Biên giới đường** — Soft boundary (đẩy xe về) + hard boundary (không đi quá xa), off-road recovery
-- 🔄 **Road looping** — Terrain loop (recycling), không xây tiếp → game nhẹ
-- 🏎️ **Car physics** — Tilt on steering, bounce, smooth camera follow, không quay ngược được
+- 🚧 **Biên giới đường** — Soft boundary + hard boundary + off-road recovery
+- 🔄 **Road looping** — Terrain loop (recycling), game nhẹ
+- 🏎️ **Car physics** — Tilt on steering, bounce, không quay ngược
+- ⌨️ **Keyboard controls** — WASD + Arrow keys cho desktop testing
 
 #### 🎭 Troll Features
 - 🔀 **Đảo ngược điều khiển** — Random 4-7s: ◀ = ▶, ▶ = ◀!
-- 🎨 **Đổi màu xe** — Xe tự đổi màu random (8s), bán xe cũ không?
-- 💬 **Pop-up troll** — 15+ tin nhắn sarcastic random (hiện ở góc dưới, không che tầm nhìn)
+- 🎨 **Đổi màu xe** — Random (8s), bán xe cũ không?
+- 💬 **Pop-up troll** — 15+ tin nhắn sarcastic (không che tầm nhìn)
 - 📱 **Fake notification** — Pin hết, GPS lỗi, mẹ gọi, virus... toàn ảo!
-- 🏆 **Achievement sarcastic** — "0.5km = khoảng cách con gián", "1km = lãng phí thời gian"
+- 🏆 **Achievement sarcastic** — "0.5km = khoảng cách con gián"
 - 🌧️ **Mưa sa mạc** — Fog burst ảo (4s rồi hết)
 - ⚡ **Turbo/slow ảo** — Speed boost hoặc kẹt cát random
 - 📊 **Screen shake** — "Sóng sa mạc" hoặc random shake
 - 💀 **Fake death flash** — "GAME OVER! ...À, chỉ là ảo giác"
 - 🔢 **Death counter** — Chết nhiều → message càng sarcastic
+- 📳 **Haptic feedback** — Rung khi chết và khi troll đảo điều khiển
 
 #### ⚙️ Engine & Performance
-- ⚡ **Adaptive quality** — Auto-detect low-end devices → giảm poly, shadows, particles
-- 📱 **Pixel ratio cap** — `Math.min(devicePixelRatio, 1.5)` → giảm GPU load
+- ⚡ **Adaptive quality** — Auto-detect low-end devices
+- 📱 **Pixel ratio cap** — Giảm GPU load
 - 🌫️ **FogExp2** — Object culling xa → giảm draw calls
 - 🔄 **Segment recycling** — Road loop, không tạo objects mới
-- 🎯 **Single animation loop** — Loop chỉ bắt đầu khi người chơi bấm "CHƠI NGAY"
-- ⏱️ **dt-based physics** — Tất cả physics đều dùng dt, không bị lệch frame rate
+- 🎯 **Single animation loop** — Loop chỉ bắt đầu khi bấm "CHƠI NGAY"
+- ⏱️ **dt-based physics** — Không lệch frame rate
+- 🧹 **Timeout management** — Track và clear tất cả setTimeout, không leak
+- 🛡️ **Double-death prevention** — S.dead flag ngăn triggerDeath() gọi nhiều lần
 
 ---
 
 ## 🎮 Cách chơi
 
-| Nút | Chức năng |
-|-----|-----------|
-| ◀ Left | Rẽ trái |
-| ▶ Right | Rẽ phải |
-| ▲ Gas | Tăng tốc |
-| ▼ Brake | Giảm tốc |
+| Nút | Chức năng | Keyboard |
+|-----|-----------|----------|
+| ◀ Left | Rẽ trái | A / ← |
+| ▶ Right | Rẽ phải | D / → |
+| ▲ Gas | Tăng tốc | W / ↑ |
+| ▼ Brake | Giảm tốc | S / ↓ |
+| Space/Enter | Bắt đầu/Chơi lại | Space/Enter |
 
 - **Xe tự chạy** — Bạn chỉ cần rẽ + điều chỉnh tốc độ
 - **Ngã rẽ** — Phải rẽ trái/phải, đi thẳng = đâm barrier = chết
-- **Off-road** — Ra đường quá 5s → xe hỏng → game over (có soft boundary đẩy xe về)
+- **Off-road** — Ra đường quá 5s → xe hỏng → game over
 - **Obstacle** — Va chạm đá/lạc đà = game over
 - **Troll** — Random events đảo điều khiển, đổi màu, pop-up ảo...
-- **Xe không quay ngược** — Rotation được giới hạn ±51°, tự động trở về thẳng
+- **Xe không quay ngược** — Rotation giới hạn ±51°, tự trở về thẳng
 
 ---
 
-## 🐛 Bug Fixes (v0.2 → v0.3)
+## 🐛 Bug Fixes History
 
-| Bug | Mô tả | Fix |
-|-----|-------|-----|
-| Màn hình đen khi vào game | Camera bắt đầu ở (0,0,0) — nằm TRONG xe, lerp 0.06 quá chậm | Set camera position ngay lập tức trong `startGame()` + `restart()`, tăng lerp lên 0.08 |
-| Xe quá bé, đường quá bé | ROAD_W=8, car body 2.5×4.6, CAM_DIST=12 | ROAD_W=14, CAR_SCALE=1.3, CAM_DIST=16, CAM_H=7.5 |
-| Xe đi ra khỏi đường | Không có hard boundary, chỉ check soft boundary | Thêm soft boundary (đẩy xe về) + hard boundary (clamp position) |
-| Xe quay ngược | rotation.y không giới hạn, xe có thể quay 180° | Giới hạn MAX_STEER_Y=PI/3.5 (~51°), tự động trở về thẳng |
-| Ngã rẽ không hoạt động | Barrier chỉ là visual, không có collision | Thêm `checkForkBarrier()` — đâm barrier = chết |
-| Cảnh báo che tầm nhìn | Troll popup ở chính giữa màn hình | Di chuyển popup xuống bottom:100px, milestone lên top:50px |
-| `state.speed` trong updateDust | Tham chiếu sai biến `state.speed` | Đổi thành `S.speed` |
-| Duplicate id trên fakeNotif | `<div id="fakeNotif" id="fakeNotifText">` | Tách thành `<div id="fakeNotif"><span id="fakeNotifText"></span></div>` |
-| Shoulder creation bug | Dùng `Object.assign` sai cho Three.js mesh | Tạo shoulder mesh riêng biệt, set position/rotation đúng |
-| Fog reset sai device type | Dùng `C.PR_CAP > 1` thay vì `isLowDevice` | Lưu `isLowDevice` flag, dùng để reset fog density đúng |
-| Off-road timer không recover | offRoadT chỉ tăng, không giảm khi về đường | Thêm `S.offRoadT=Math.max(0, S.offRoadT-dt*0.5)` khi on-road |
-| Boot loop chạy khi chưa chơi | `startLoop()` gọi ngay khi boot,浪费 CPU | Chỉ render 1 frame khi boot, loop bắt đầu khi bấm "CHƠI NGAY" |
+### v0.3 → v0.4 (25+ bugs fixed)
+
+| # | Bug | Fix |
+|---|-----|-----|
+| 1 | **GitHub Actions: Gradle build fail** — KEYSTORE_FILE env var không set | Thêm env vars cho Gradle build step |
+| 2 | **GitHub Actions: APK find wrong** — find command có thể pick sai APK | Check if already signed before re-signing |
+| 3 | **GitHub Actions: zipalign verbose** — -v flag gây issue | Dùng -f flag thay vì -v |
+| 4 | **GitHub Actions: Wrapper jar missing** — Retroactive workflow không copy jar | Copy wrapper jar + properties riêng |
+| 5 | **Troll popup timeout leak** — setTimeout không clear khi gọi lại | Track trollTimeout, clear trước khi set mới |
+| 6 | **Achievement timeout leak** — setTimeout không clear | Track achievementTimeout, clear trước |
+| 7 | **Fog reset timeout leak** — setTimeout không clear | Track fogTimeout, clear trước |
+| 8 | **Double death** — triggerDeath() gọi nhiều lần trong 1 frame | Thêm S.dead flag |
+| 9 | **No keyboard controls** — Không test được trên desktop | Thêm WASD + Arrow keys |
+| 10 | **No vibration** — Game không rung khi chết | Thêm vibrate() bridge + navigator.vibrate |
+| 11 | **reverseIndicator overlap** — Trùng vị trí với troll popup | Di chuyển lên top:50px |
+| 12 | **No cursor pointer** — Buttons không có cursor | Thêm cursor:pointer |
+| 13 | **No accessibility** — Không có aria-label, role | Thêm aria-label, role=dialog |
+| 14 | **No reduced motion** — Animation không tắt được | Thêm prefers-reduced-motion |
+| 15 | **WebView memory leak** — Không destroy WebView | Thêm destroy() trong onDestroy() |
+| 16 | **WebView CPU waste** — Không pause WebView khi onPause | Thêm onPause/onResume lifecycle |
+| 17 | **Deprecated hideSystemUI** — SYSTEM_UI_FLAG_* deprecated API 30+ | Dùng WindowInsetsControllerCompat |
+| 18 | **Deprecated WebSettings** — setEnableSmoothTransition, setRenderPriority | Xóa deprecated APIs |
+| 19 | **InputStream leak** — LoadingActivity không close InputStream | Dùng try-with-resources |
+| 20 | **Unused constraintlayout** — Không dùng trong layouts | Xóa dependency |
+| 21 | **Unused viewBinding** — Enabled nhưng không dùng | Tắt viewBinding |
+| 22 | **Overly broad ProGuard** — -keep class android.webkit.WebView | Keep chỉ GameJSInterface |
+| 23 | **Missing VIBRATE permission** — Haptic feedback không chạy | Thêm permission |
+| 24 | **No largeHeap** — WebGL có thể OOM | Thêm android:largeHeap=true |
+| 25 | **Missing ACCESS_NETWORK_STATE** — Không cần nhưng có | Xóa permission |
+
+### v0.2 → v0.3 (12 bugs)
+See [v0.3 release](https://github.com/mhieuhonda/samacaogiac/releases/tag/v0.3)
+
+### v0.1 → v0.2 (8 bugs)
+See [v0.2 release](https://github.com/mhieuhonda/samacaogiac/releases/tag/v0.2)
 
 ---
 
@@ -106,8 +131,18 @@ cd samacaogiac
 
 # Terminal:
 ./gradlew assembleDebug    # Debug APK
-./gradlew assembleRelease  # Release APK
+./gradlew assembleRelease  # Release APK (requires keystore)
 ```
+
+### CI/CD (GitHub Actions)
+
+Push a release tag → automatic build + signed APK upload:
+```bash
+git tag -a v0.5 -m "Release v0.5"
+git push origin v0.5
+```
+
+Required secrets: `KEYSTORE_BASE64`, `KEY_ALIAS`, `KEY_PASSWORD`, `KEYSTORE_PASSWORD`
 
 ---
 
@@ -121,11 +156,11 @@ samacaogiac/
 │   │   ├── favicon.svg           # Game logo
 │   │   └── game/
 │   │       ├── index.html        # UI screens + overlays + troll UI
-│   │       ├── game.js           # Engine v0.3 (all bugs fixed)
+│   │       ├── game.js           # Engine v0.4 (all bugs fixed)
 │   │       └── three.min.js      # Three.js r160
 │   ├── java/com/samacaogiac/game/
 │   │   ├── LoadingActivity.java  # Loading (troll messages)
-│   │   └── GameActivity.java     # WebView + vibration bridge
+│   │   └── GameActivity.java     # WebView + vibration bridge + lifecycle
 │   └── res/                       # Layouts, icons, styles
 ├── .github/workflows/             # CI/CD auto-build
 ├── build.gradle / settings.gradle
@@ -140,41 +175,42 @@ samacaogiac/
 | Component | Tech |
 |-----------|------|
 | 3D Engine | Three.js (WebGL) |
-| Android | WebView + Hardware Accel + Vibration Bridge |
+| Android | WebView + Hardware Accel + Vibration Bridge + Lifecycle |
 | Language | JavaScript (game), Java (Android) |
 | Build | Gradle 8.4 + AGP 8.1.4 |
 | Target | Android 7.0+ (API 24) |
+| CI/CD | GitHub Actions (auto-build + sign APK) |
 
 ---
 
 ## 🎯 Changelog
 
-### v0.3 (Current)
-- 🐛 **Fix 12 bugs** from v0.2 (critical: black screen, no forks, off-road, reverse)
-- 🛣️ **Đường rộng hơn** — ROAD_W: 8 → 14, dễ điều khiển
-- 🚗 **Xe lớn hơn** — CAR_SCALE: 1.3x, nhìn rõ hơn
-- 📷 **Camera tốt hơn** — CAM_DIST: 16, CAM_H: 7.5, lerp: 0.08, init ngay lập tức
-- 🔀 **Ngã rẽ thật** — Barrier collision check, đi thẳng = chết
-- 🚧 **Biên giới đường** — Soft boundary + hard boundary + off-road recovery
-- 🔒 **Xe không quay ngược** — MAX_STEER_Y: ~51°, auto-center
-- 👁️ **UI không che tầm nhìn** — Troll popup → bottom, milestone → top
-- 📱 **Off-road timer recover** — Về đường → timer giảm dần
+### v0.4 (Current)
+- 🔧 **Fix 25+ bugs** — GitHub Actions, game engine, Android lifecycle, ProGuard, a11y
+- 🚀 **GitHub Actions CI** — Proper env vars, APK signing, wrapper check
+- 🧹 **Timeout management** — Track + clear all setTimeout, no memory leak
+- 🛡️ **Double-death prevention** — S.dead flag
+- ⌨️ **Keyboard controls** — WASD + Arrow keys
+- 📳 **Haptic feedback** — Vibration on death + troll events
+- ♿ **Accessibility** — aria-label, role=dialog, prefers-reduced-motion
+- 🤖 **Android lifecycle** — WebView onPause/onResume/destroy
+- 📦 **Build optimization** — Remove unused deps, fix ProGuard, add largeHeap
+
+### v0.3
+- 🐛 Fix 12 bugs from v0.2 (black screen, car size, road width, off-road, reverse, forks, UI blocking)
+- 🛣️ Đường rộng hơn 75%
+- 🚗 Xe lớn hơn 30%
+- 🔀 Ngã rẽ thật — barrier collision
+- 🚧 Biên giới đường
 
 ### v0.2
 - 🐛 Fix 8 bugs from v0.1
-- 🎭 Add troll features: control reversal, car color change, fake notifications, sarcastic achievements, fake death flash, screen shake, fog burst, speed illusion
-- 🚗 Improved car model: grille chrome strips, racing stripe, fog lights, license plate, door lines
-- 🏜️ More decorations: dead trees, dead camels on road
-- 🎯 Fork road geometry + dead-end barrier
-- 💀 Obstacle collision system
-- 📱 Off-road vignette overlay
-- 🎮 Car tilt on steering + body bounce
-- 📊 Death counter with sarcastic messages
-- ⏱️ Play timer in HUD
-- 🔔 Vibration feedback (Android bridge)
+- 🎭 Add troll features
+- 🎮 Car tilt + body bounce
+- 📊 Death counter
 
 ### v0.1
-- Initial release: basic game with car + desert + road + death screen + 1-hour easter egg
+- Initial release
 
 ---
 
