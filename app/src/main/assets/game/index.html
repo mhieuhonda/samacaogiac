@@ -2,205 +2,242 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#0f0c29">
-    <title>Sa Mac Ao Giac</title>
+    <meta name="description" content="Sa Mạc Ảo Giác v1.0 - Game sa mạc 5 chế độ chơi: Đua xe, Zombie, FPS, Simulator, Time Attack">
+    <link rel="icon" type="image/png" href="../Logo.png">
+    <title>Sa Mạc Ảo Giác v1.0</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
         html,body{width:100%;height:100%;overflow:hidden;background:#0f0c29;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;touch-action:none;transition:transform .3s,filter .3s}
         canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1}
 
-        /* ── HUD ── */
+        /* ── HUD (top bar — mode-aware) ── */
         #hud{position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;pointer-events:none;transition:opacity .3s}
-        .hud-box{position:absolute;color:#fff;font-weight:700;text-shadow:0 2px 8px rgba(0,0,0,.9);background:rgba(0,0,0,.45);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);border-radius:12px;border:1px solid rgba(255,255,255,.08)}
-        #speedHud{top:10px;left:50%;transform:translateX(-50%);font-size:16px;padding:6px 16px;letter-spacing:1px}
-        #distHud{top:10px;right:14px;font-size:14px;padding:5px 12px;color:#fbbf24}
-        #timerHud{top:10px;left:14px;font-size:12px;padding:4px 10px;color:#94a3b8}
-        #topSpeedHud{top:38px;right:14px;font-size:11px;padding:3px 10px;color:#94a3b8}
-        #totalKmHud{top:54px;right:14px;font-size:11px;padding:3px 10px;color:#94a3b8}
-        #fpsHud{top:38px;left:14px;font-size:11px;padding:3px 10px;color:#94a3b8}
+        .hud-box{position:absolute;color:#fff;font-weight:700;text-shadow:0 2px 8px rgba(0,0,0,.9);background:rgba(0,0,0,.45);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);border-radius:10px;border:1px solid rgba(255,255,255,.08)}
+        /* HUD top-left column: timer + fps (compact) */
+        #timerHud{top:8px;left:8px;font-size:11px;padding:3px 9px;color:#94a3b8}
+        #fpsHud{top:30px;left:8px;font-size:10px;padding:3px 9px;color:#94a3b8}
+        /* HUD top-center: speed (desert) or ammo (zombie) or score (other modes) */
+        #speedHud{top:8px;left:50%;transform:translateX(-50%);font-size:15px;padding:5px 14px;letter-spacing:1px}
+        /* HUD right column moved DOWN to avoid overlap with control buttons (top:50px) */
+        #distHud{top:8px;right:8px;font-size:12px;padding:4px 10px;color:#fbbf24}
+        #topSpeedHud{top:30px;right:8px;font-size:10px;padding:3px 9px;color:#94a3b8}
+        #totalKmHud{top:48px;right:8px;font-size:10px;padding:3px 9px;color:#94a3b8}
 
-        /* ── ZOMBIE HUD ── */
+        /* ── ZOMBIE HUD (only shown in zombie mode) ── */
         #zombieHud{position:absolute;top:0;left:0;width:100%;z-index:11;pointer-events:none;display:none}
-        #healthBar{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);width:160px;height:8px;background:rgba(0,0,0,.5);border-radius:4px;overflow:hidden;border:1px solid rgba(255,255,255,.15)}
+        #ammoHud{position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:13px;font-weight:800;color:#fbbf24;text-shadow:0 2px 6px rgba(0,0,0,.9);background:rgba(0,0,0,.55);padding:4px 12px;border-radius:10px;display:none}
+        #waveHud{position:absolute;top:34px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:700;color:#ef4444;text-shadow:0 2px 6px rgba(0,0,0,.9);background:rgba(0,0,0,.55);padding:3px 11px;border-radius:10px;display:none}
+        #killHud{position:absolute;top:50px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:700;color:#94a3b8;background:rgba(0,0,0,.55);padding:2px 10px;border-radius:10px;display:none}
+        #healthBar{position:absolute;bottom:90px;left:50%;transform:translateX(-50%);width:160px;height:8px;background:rgba(0,0,0,.55);border-radius:4px;overflow:hidden;border:1px solid rgba(255,255,255,.15);display:none}
         #healthFill{width:100%;height:100%;background:linear-gradient(90deg,#ef4444,#22c55e);transition:width .2s ease-out;border-radius:4px}
-        #ammoHud{position:absolute;top:10px;left:50%;transform:translateX(-50%);font-size:14px;font-weight:800;color:#fbbf24;text-shadow:0 2px 6px rgba(0,0,0,.9);background:rgba(0,0,0,.45);padding:4px 14px;border-radius:10px;display:none}
-        #waveHud{position:absolute;top:38px;left:50%;transform:translateX(-50%);font-size:12px;font-weight:700;color:#ef4444;text-shadow:0 2px 6px rgba(0,0,0,.9);background:rgba(0,0,0,.45);padding:4px 12px;border-radius:10px;display:none}
-        #killHud{position:absolute;top:54px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:700;color:#94a3b8;background:rgba(0,0,0,.45);padding:3px 10px;border-radius:10px;display:none}
-        #crosshair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:12;pointer-events:none;display:none;width:40px;height:40px}
-        #crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(255,255,255,.7);border-radius:1px}
+        #crosshair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:12;pointer-events:none;display:none;width:36px;height:36px}
+        #crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(255,80,80,.85);border-radius:1px}
         #crosshair::before{width:2px;height:100%;left:50%;transform:translateX(-50%)}
         #crosshair::after{height:2px;width:100%;top:50%;transform:translateY(-50%)}
         #crosshairDot{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:4px;height:4px;background:#ef4444;border-radius:50%;z-index:13;pointer-events:none;display:none}
 
+        /* ── GENERIC MODE HUD (FPS, Simulator, TimeAttack) ── */
+        #modeHud{position:absolute;top:0;left:0;width:100%;z-index:11;pointer-events:none;display:none}
+        #modeScoreHud{position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:14px;font-weight:800;color:#fbbf24;text-shadow:0 2px 6px rgba(0,0,0,.9);background:rgba(0,0,0,.55);padding:4px 14px;border-radius:10px}
+        #modeInfoHud{position:absolute;top:34px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:700;color:#94a3b8;text-shadow:0 2px 6px rgba(0,0,0,.9);background:rgba(0,0,0,.55);padding:3px 11px;border-radius:10px}
+        #modeStatusHud{position:absolute;top:50px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:700;color:#22c55e;background:rgba(0,0,0,.55);padding:2px 10px;border-radius:10px}
+
         /* ── COIN COUNTER ── */
-        #coinCounter{position:absolute;top:10px;left:50%;transform:translateX(-50%) translateY(40px);color:#fbbf24;font-size:13px;font-weight:800;text-shadow:0 2px 6px rgba(0,0,0,.9);background:rgba(17,24,39,.6);padding:4px 12px;border-radius:10px;z-index:11}
+        #coinCounter{position:absolute;top:8px;left:50%;transform:translateX(-50%) translateY(28px);color:#fbbf24;font-size:12px;font-weight:800;text-shadow:0 2px 6px rgba(0,0,0,.9);background:rgba(17,24,39,.6);padding:3px 11px;border-radius:10px;z-index:11;display:none}
 
         /* ── SPEEDOMETER DIAL ── */
-        #speedoWrap{position:absolute;bottom:100px;right:24px;width:80px;height:80px;z-index:11;pointer-events:none;display:none}
-        #speedoDial{position:absolute;top:0;left:50%;width:3px;height:38px;background:#fbbf24;transform-origin:50% 100%;transform:rotate(-120deg);border-radius:2px;box-shadow:0 0 6px rgba(251,191,36,.6)}
-        #speedoBg{width:80px;height:80px;border-radius:50%;background:rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.2);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);position:relative;overflow:hidden}
-        #speedoBg::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;background:#fbbf24;border-radius:50%}
+        #speedoWrap{position:absolute;bottom:90px;right:16px;width:74px;height:74px;z-index:11;pointer-events:none;display:none}
+        #speedoDial{position:absolute;top:0;left:50%;width:3px;height:36px;background:#fbbf24;transform-origin:50% 100%;transform:rotate(-120deg);border-radius:2px;box-shadow:0 0 6px rgba(251,191,36,.6)}
+        #speedoBg{width:74px;height:74px;border-radius:50%;background:rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.18);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);position:relative;overflow:hidden}
+        #speedoBg::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:7px;height:7px;background:#fbbf24;border-radius:50%}
 
         /* ── BOOST BAR ── */
-        #boostBar{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);width:140px;height:6px;background:rgba(0,0,0,.4);border-radius:3px;z-index:11;display:none;overflow:hidden;border:1px solid rgba(255,255,255,.15)}
+        #boostBar{position:absolute;bottom:90px;left:50%;transform:translateX(-50%);width:130px;height:6px;background:rgba(0,0,0,.4);border-radius:3px;z-index:11;display:none;overflow:hidden;border:1px solid rgba(255,255,255,.15)}
         #boostFill{width:0%;height:100%;background:linear-gradient(90deg,#22c55e,#f59e0b);transition:width .15s ease-out}
-        #boostLabel{position:absolute;bottom:108px;left:50%;transform:translateX(-50%);font-size:9px;color:#94a3b8;z-index:11;letter-spacing:1px}
+        #boostLabel{position:absolute;bottom:98px;left:50%;transform:translateX(-50%);font-size:9px;color:#94a3b8;z-index:11;letter-spacing:1px;display:none}
 
-        /* ── PAUSE BUTTON ── */
-        #pauseBtn{position:absolute;top:50px;right:14px;z-index:15;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.45);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border:2px solid rgba(255,255,255,.2);display:none;align-items:center;justify-content:center;color:rgba(255,255,255,.7);font-size:16px;cursor:pointer;pointer-events:auto}
-        #pauseBtn:active{background:rgba(255,255,255,.2);transform:scale(.9)}
-
-        /* ── SETTINGS BUTTON ── */
-        #settingsBtn{position:absolute;top:50px;right:62px;z-index:15;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.45);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border:2px solid rgba(255,255,255,.2);display:none;align-items:center;justify-content:center;color:rgba(255,255,255,.7);font-size:16px;cursor:pointer;pointer-events:auto}
-        #settingsBtn:active{background:rgba(255,255,255,.2);transform:scale(.9)}
-
-        /* ── CAMERA MODE BUTTON ── */
-        #cameraModeBtn{position:absolute;top:50px;right:110px;z-index:15;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.45);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border:2px solid rgba(255,255,255,.2);display:none;align-items:center;justify-content:center;color:rgba(255,255,255,.7);font-size:18px;cursor:pointer;pointer-events:auto}
-        #cameraModeBtn:active{background:rgba(255,255,255,.2);transform:scale(.9)}
+        /* ── CONTROL BUTTONS (top-right) — moved up & smaller to avoid HUD overlap ── */
+        .ctl-btn{position:absolute;top:8px;width:34px;height:34px;border-radius:17px;background:rgba(0,0,0,.55);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border:1.5px solid rgba(255,255,255,.2);display:none;align-items:center;justify-content:center;color:rgba(255,255,255,.85);font-size:14px;cursor:pointer;pointer-events:auto;z-index:15}
+        .ctl-btn:active{background:rgba(255,255,255,.25);transform:scale(.9)}
+        #pauseBtn{right:48px}
+        #settingsBtn{right:8px}
+        #cameraModeBtn{right:88px}
 
         /* ── MUSIC INDICATOR ── */
-        #musicIndicator{position:absolute;top:50px;left:14px;z-index:15;display:none;align-items:center;background:rgba(17,24,39,.7);color:#e2e8f0;font-size:11px;padding:6px 12px;border-radius:14px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.1);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        #musicToggleBtn{margin-left:8px;color:#f59e0b;cursor:pointer;font-size:14px;padding:0 4px}
+        #musicIndicator{position:absolute;top:46px;left:8px;z-index:15;display:none;align-items:center;background:rgba(17,24,39,.7);color:#e2e8f0;font-size:10px;padding:4px 10px;border-radius:12px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.1);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        #musicToggleBtn{margin-left:6px;color:#f59e0b;cursor:pointer;font-size:12px;padding:0 3px}
 
         /* ── OFF-ROAD VIGNETTE ── */
         #offroadVignette{position:absolute;top:0;left:0;width:100%;height:100%;z-index:8;pointer-events:none;display:none;background:radial-gradient(ellipse at center,transparent 40%,rgba(220,38,38,.35) 100%);animation:vigPulse .8s ease-in-out infinite}
         @keyframes vigPulse{0%,100%{opacity:.7}50%{opacity:1}}
 
-        /* ── CONTROLS ── */
+        /* ── CONTROLS (desert) ── */
         #controls{position:absolute;top:0;left:0;width:100%;height:100%;z-index:20;pointer-events:none;display:none}
-        .cb{pointer-events:auto;position:absolute;width:66px;height:66px;border-radius:33px;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:24px;color:rgba(255,255,255,.65);transition:background .06s,transform .06s}
+        .cb{pointer-events:auto;position:absolute;width:60px;height:60px;border-radius:30px;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:22px;color:rgba(255,255,255,.7);transition:background .06s,transform .06s}
         .cb.on{background:rgba(255,255,255,.28);border-color:rgba(255,255,255,.45);color:#fff;transform:scale(.92)}
-        #bL{bottom:24px;left:16px}#bR{bottom:24px;left:88px}#bG{bottom:24px;right:16px}#bB{bottom:24px;right:88px}
-        #bBoost{bottom:94px;right:52px;width:48px;height:48px;font-size:20px;background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.4);color:#f59e0b}
+        #bL{bottom:20px;left:14px}#bR{bottom:20px;left:78px}#bG{bottom:20px;right:14px}#bB{bottom:20px;right:78px}
+        #bBoost{bottom:84px;right:46px;width:44px;height:44px;font-size:18px;background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.4);color:#f59e0b}
         #bBoost.on{background:rgba(245,158,11,.4);color:#fff}
 
         /* ── ZOMBIE CONTROLS ── */
         #zombieControls{position:absolute;top:0;left:0;width:100%;height:100%;z-index:20;pointer-events:none;display:none}
-        #bShoot{pointer-events:auto;position:absolute;bottom:24px;right:24px;width:72px;height:72px;border-radius:36px;background:rgba(239,68,68,.2);border:3px solid rgba(239,68,68,.5);display:flex;align-items:center;justify-content:center;font-size:28px;color:#ef4444;transition:background .06s,transform .06s}
+        #bShoot{pointer-events:auto;position:absolute;bottom:20px;right:20px;width:66px;height:66px;border-radius:33px;background:rgba(239,68,68,.2);border:3px solid rgba(239,68,68,.5);display:flex;align-items:center;justify-content:center;font-size:26px;color:#ef4444;transition:background .06s,transform .06s}
         #bShoot.on{background:rgba(239,68,68,.5);color:#fff;transform:scale(.92)}
-        #bReload{pointer-events:auto;position:absolute;bottom:24px;right:110px;width:56px;height:56px;border-radius:28px;background:rgba(245,158,11,.15);border:2px solid rgba(245,158,11,.4);display:flex;align-items:center;justify-content:center;font-size:20px;color:#f59e0b}
+        #bReload{pointer-events:auto;position:absolute;bottom:20px;right:96px;width:52px;height:52px;border-radius:26px;background:rgba(245,158,11,.15);border:2px solid rgba(245,158,11,.4);display:flex;align-items:center;justify-content:center;font-size:18px;color:#f59e0b}
         #bReload.on{background:rgba(245,158,11,.4);color:#fff;transform:scale(.92)}
-        #bZL{pointer-events:auto;position:absolute;bottom:24px;left:16px;width:66px;height:66px;border-radius:33px;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:24px;color:rgba(255,255,255,.65)}
-        #bZR{pointer-events:auto;position:absolute;bottom:24px;left:88px;width:66px;height:66px;border-radius:33px;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:24px;color:rgba(255,255,255,.65)}
+        #bZL{pointer-events:auto;position:absolute;bottom:20px;left:14px;width:60px;height:60px;border-radius:30px;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:22px;color:rgba(255,255,255,.7)}
+        #bZR{pointer-events:auto;position:absolute;bottom:20px;left:78px;width:60px;height:60px;border-radius:30px;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:22px;color:rgba(255,255,255,.7)}
         #bZL.on,#bZR.on{background:rgba(255,255,255,.28);border-color:rgba(255,255,255,.45);color:#fff;transform:scale(.92)}
+
+        /* ── FPS MODE CONTROLS ── */
+        #fpsControls{position:absolute;top:0;left:0;width:100%;height:100%;z-index:20;pointer-events:none;display:none}
+        #fpsMoveBtn{pointer-events:auto;position:absolute;bottom:24px;left:50%;transform:translateX(-50%);width:60px;height:60px;border-radius:30px;background:rgba(34,197,94,.15);border:2px solid rgba(34,197,94,.5);display:flex;align-items:center;justify-content:center;font-size:22px;color:#22c55e;cursor:pointer}
+        #fpsShootBtn{pointer-events:auto;position:absolute;bottom:24px;right:24px;width:72px;height:72px;border-radius:36px;background:rgba(239,68,68,.2);border:3px solid rgba(239,68,68,.5);display:flex;align-items:center;justify-content:center;font-size:28px;color:#ef4444}
+        #fpsShootBtn.on{background:rgba(239,68,68,.55);color:#fff;transform:scale(.92)}
+        #fpsJumpBtn{pointer-events:auto;position:absolute;bottom:24px;right:108px;width:54px;height:54px;border-radius:27px;background:rgba(96,165,250,.15);border:2px solid rgba(96,165,250,.5);display:flex;align-items:center;justify-content:center;font-size:20px;color:#60a5fa}
+        #fpsJumpBtn.on{background:rgba(96,165,250,.45);color:#fff;transform:scale(.92)}
+        #fpsReloadBtn{pointer-events:auto;position:absolute;bottom:88px;right:24px;width:48px;height:48px;border-radius:24px;background:rgba(245,158,11,.15);border:2px solid rgba(245,158,11,.4);display:flex;align-items:center;justify-content:center;font-size:18px;color:#f59e0b}
+
+        /* ── SIMULATOR CONTROLS ── */
+        #simControls{position:absolute;top:0;left:0;width:100%;height:100%;z-index:20;pointer-events:none;display:none}
+        #bSimL{pointer-events:auto;position:absolute;bottom:20px;left:14px;width:54px;height:54px;border-radius:27px;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:20px;color:rgba(255,255,255,.7)}
+        #bSimR{pointer-events:auto;position:absolute;bottom:20px;left:72px;width:54px;height:54px;border-radius:27px;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:20px;color:rgba(255,255,255,.7)}
+        #bSimG{pointer-events:auto;position:absolute;bottom:20px;right:14px;width:60px;height:60px;border-radius:30px;background:rgba(34,197,94,.15);border:2px solid rgba(34,197,94,.5);display:flex;align-items:center;justify-content:center;font-size:22px;color:#22c55e}
+        #bSimB{pointer-events:auto;position:absolute;bottom:20px;right:78px;width:54px;height:54px;border-radius:27px;background:rgba(239,68,68,.15);border:2px solid rgba(239,68,68,.4);display:flex;align-items:center;justify-content:center;font-size:20px;color:#ef4444}
+        .sim-ctl{display:flex;align-items:center;justify-content:center;font-size:20px}
+        .sim-ctl.on{background:rgba(255,255,255,.28)!important;border-color:rgba(255,255,255,.45)!important;color:#fff!important;transform:scale(.92)}
 
         /* ── SCREEN SHAKE ── */
         #shakeWrap{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0}
 
         /* ── WELCOME / MODE SELECT ── */
-        #welcomeScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:100;display:flex;align-items:center;justify-content:center;flex-direction:column;background:linear-gradient(135deg,#0f0c29,#302b63,#24243e)}
-        .w-logo{width:80px;height:80px;margin-bottom:16px;filter:drop-shadow(0 0 20px rgba(245,158,11,.4))}
-        .w-title{color:#f59e0b;font-size:26px;font-weight:800;letter-spacing:4px;margin-bottom:4px;text-shadow:0 4px 20px rgba(245,158,11,.3)}
-        .w-sub{color:#94a3b8;font-size:11px;letter-spacing:2px;margin-bottom:24px}
-        .w-ver{color:#64748b;font-size:10px;letter-spacing:1px;margin-bottom:20px}
-        .w-msg{color:#e2e8f0;font-size:14px;margin-bottom:24px;text-align:center;line-height:1.7;padding:0 28px}
-        .mode-grid{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;padding:0 20px;margin-bottom:20px}
-        .mode-card{background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.12);border-radius:16px;padding:16px 20px;text-align:center;min-width:130px;cursor:pointer;transition:all .2s;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
-        .mode-card:hover,.mode-card:active{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.5);transform:scale(.96)}
-        .mode-icon{font-size:32px;margin-bottom:8px}
-        .mode-name{color:#fbbf24;font-size:13px;font-weight:700;letter-spacing:1px;margin-bottom:4px}
-        .mode-desc{color:#94a3b8;font-size:10px;line-height:1.4}
-        .play-btn{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:16px;font-weight:800;padding:12px 44px;border-radius:28px;border:none;letter-spacing:3px;box-shadow:0 4px 24px rgba(245,158,11,.4);animation:pulse 2s ease-in-out infinite;cursor:pointer}
+        #welcomeScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:100;display:flex;align-items:center;justify-content:center;flex-direction:column;background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);padding:16px;overflow-y:auto}
+        .w-logo{width:96px;height:96px;margin-bottom:12px;filter:drop-shadow(0 0 24px rgba(245,158,11,.5));border-radius:18px;object-fit:cover}
+        .w-title{color:#f59e0b;font-size:24px;font-weight:800;letter-spacing:3px;margin-bottom:2px;text-shadow:0 4px 24px rgba(245,158,11,.4);text-align:center}
+        .w-sub{color:#94a3b8;font-size:11px;letter-spacing:2px;margin-bottom:4px;text-align:center}
+        .w-ver{color:#64748b;font-size:10px;letter-spacing:1px;margin-bottom:14px;text-align:center}
+        .w-msg{color:#e2e8f0;font-size:13px;margin-bottom:18px;text-align:center;line-height:1.6;padding:0 20px}
+        .mode-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;justify-content:center;padding:0 12px;margin-bottom:18px;max-width:680px;width:100%}
+        .mode-card{background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.12);border-radius:14px;padding:14px 12px;text-align:center;min-height:120px;cursor:pointer;transition:all .2s;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:flex;flex-direction:column;justify-content:center;align-items:center}
+        .mode-card:hover,.mode-card:active{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.6);transform:scale(.96)}
+        .mode-icon{font-size:30px;margin-bottom:6px;line-height:1}
+        .mode-name{color:#fbbf24;font-size:13px;font-weight:700;letter-spacing:1px;margin-bottom:3px}
+        .mode-desc{color:#94a3b8;font-size:10px;line-height:1.35}
+        .play-btn{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:15px;font-weight:800;padding:11px 40px;border-radius:26px;border:none;letter-spacing:3px;box-shadow:0 4px 24px rgba(245,158,11,.4);animation:pulse 2s ease-in-out infinite;cursor:pointer;margin-top:6px}
         .play-btn:active{transform:scale(.94)}
         @keyframes pulse{0%,100%{box-shadow:0 4px 24px rgba(245,158,11,.4)}50%{box-shadow:0 6px 36px rgba(245,158,11,.7)}}
 
         /* ── MUSIC PROMPT ── */
-        #musicPrompt{position:absolute;top:0;left:0;width:100%;height:100%;z-index:110;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.85);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:32px}
-        .mp-title{color:#f59e0b;font-size:22px;font-weight:800;letter-spacing:2px;margin-bottom:12px;text-align:center}
-        .mp-sub{color:#cbd5e1;font-size:13px;margin-bottom:28px;text-align:center;line-height:1.6;padding:0 16px}
-        .mp-btns{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
-        .mp-btn{font-size:15px;font-weight:700;padding:12px 32px;border-radius:24px;border:none;letter-spacing:1px;cursor:pointer;min-width:130px}
+        #musicPrompt{position:absolute;top:0;left:0;width:100%;height:100%;z-index:110;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.85);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:24px}
+        .mp-title{color:#f59e0b;font-size:20px;font-weight:800;letter-spacing:2px;margin-bottom:10px;text-align:center}
+        .mp-sub{color:#cbd5e1;font-size:12px;margin-bottom:24px;text-align:center;line-height:1.6;padding:0 12px}
+        .mp-btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+        .mp-btn{font-size:14px;font-weight:700;padding:11px 26px;border-radius:22px;border:none;letter-spacing:1px;cursor:pointer;min-width:120px}
         .mp-yes{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff}
         .mp-no{background:rgba(255,255,255,.1);color:#e2e8f0;border:1px solid rgba(255,255,255,.2)}
         .mp-btn:active{transform:scale(.94)}
 
-        /* ── DEATH ── */
-        #deathScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.88);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:24px}
-        .d-t{color:#ef4444;font-size:28px;font-weight:800;letter-spacing:2px;margin-bottom:10px}
-        .d-d{color:#fbbf24;font-size:14px;margin-bottom:8px;text-align:center;padding:0 16px;line-height:1.5}
-        .d-best{color:#94a3b8;font-size:13px;margin-bottom:20px}
-        .d-b{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;font-size:16px;font-weight:700;padding:11px 40px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer;margin-top:8px}
-        .d-b:active{transform:scale(.94)}
-
-        /* ── ZOMBIE DEATH ── */
-        #zombieDeathScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(30,0,0,.92);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:24px}
-        .zd-t{color:#ef4444;font-size:28px;font-weight:800;letter-spacing:2px;margin-bottom:10px;text-shadow:0 0 20px rgba(239,68,68,.5)}
-        .zd-d{color:#fbbf24;font-size:14px;margin-bottom:8px;text-align:center;padding:0 16px;line-height:1.5}
-        .zd-best{color:#94a3b8;font-size:13px;margin-bottom:20px}
-        .zd-b{background:linear-gradient(135deg,#ef4444,#991b1b);color:#fff;font-size:16px;font-weight:700;padding:11px 40px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer;margin-top:8px}
-        .zd-b:active{transform:scale(.94)}
+        /* ── GENERIC DEATH / END SCREEN ── */
+        .end-screen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.9);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:24px;overflow-y:auto}
+        .end-t{color:#ef4444;font-size:26px;font-weight:800;letter-spacing:2px;margin-bottom:10px;text-align:center;text-shadow:0 0 20px rgba(239,68,68,.5)}
+        .end-d{color:#fbbf24;font-size:13px;margin-bottom:6px;text-align:center;padding:0 14px;line-height:1.6;max-width:520px;word-wrap:break-word;overflow-wrap:break-word;hyphens:auto}
+        .end-best{color:#94a3b8;font-size:12px;margin-bottom:18px;text-align:center}
+        .end-b{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:15px;font-weight:700;padding:11px 36px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer;margin-top:6px}
+        .end-b:active{transform:scale(.94)}
+        .end-b.secondary{background:rgba(255,255,255,.1);color:#e2e8f0;border:1px solid rgba(255,255,255,.2);margin-top:8px}
 
         /* ── EASTER ── */
-        #easterScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:300;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-        .e-m{color:#fbbf24;font-size:22px;font-weight:700;margin-bottom:22px;text-align:center;line-height:1.6;padding:0 24px}
-        .e-b{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:16px;font-weight:700;padding:11px 40px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer}
+        #easterScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:300;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:24px}
+        .e-m{color:#fbbf24;font-size:20px;font-weight:700;margin-bottom:22px;text-align:center;line-height:1.6;padding:0 24px}
+        .e-b{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:15px;font-weight:700;padding:11px 36px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer}
 
         /* ── PAUSE ── */
-        #pauseScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:250;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.85);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
-        .p-title{color:#fbbf24;font-size:24px;font-weight:800;letter-spacing:3px;margin-bottom:30px}
-        .p-btn{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:16px;font-weight:700;padding:12px 40px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer;margin-bottom:12px;min-width:200px}
+        #pauseScreen{position:absolute;top:0;left:0;width:100%;height:100%;z-index:250;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(0,0,0,.85);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:24px}
+        .p-title{color:#fbbf24;font-size:22px;font-weight:800;letter-spacing:3px;margin-bottom:24px}
+        .p-btn{background:linear-gradient(135deg,#f59e0b,#d97706);color:#111;font-size:15px;font-weight:700;padding:11px 36px;border-radius:24px;border:none;letter-spacing:2px;cursor:pointer;margin-bottom:10px;min-width:200px}
         .p-btn:active{transform:scale(.94)}
-        .p-btn2{background:rgba(255,255,255,.1);color:#e2e8f0;font-size:14px;font-weight:600;padding:10px 40px;border-radius:24px;border:1px solid rgba(255,255,255,.2);cursor:pointer;min-width:200px}
+        .p-btn2{background:rgba(255,255,255,.1);color:#e2e8f0;font-size:13px;font-weight:600;padding:10px 36px;border-radius:24px;border:1px solid rgba(255,255,255,.2);cursor:pointer;min-width:200px}
         .p-btn2:active{transform:scale(.94)}
 
-        /* ── SETTINGS ── */
-        #settingsScr{position:absolute;top:0;left:0;width:100%;height:100%;z-index:260;display:none;align-items:flex-start;justify-content:center;flex-direction:column;background:rgba(0,0,0,.92);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:24px;overflow-y:auto}
-        .s-title{color:#fbbf24;font-size:20px;font-weight:800;letter-spacing:2px;margin-bottom:18px;align-self:center}
-        .s-section{color:#94a3b8;font-size:10px;letter-spacing:1.5px;margin-top:14px;margin-bottom:6px;text-transform:uppercase;align-self:center}
-        .s-btn{background:rgba(255,255,255,.08);color:#e2e8f0;font-size:13px;font-weight:600;padding:10px 28px;border-radius:20px;border:1px solid rgba(255,255,255,.12);cursor:pointer;margin-bottom:8px;min-width:220px;text-align:center;align-self:center}
+        /* ── SETTINGS (scrollable on small screens, content centered) ── */
+        #settingsScr{position:absolute;top:0;left:0;width:100%;height:100%;z-index:260;display:none;align-items:flex-start;justify-content:center;flex-direction:column;background:rgba(0,0,0,.93);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:16px 16px 60px;overflow-y:auto}
+        .s-title{color:#fbbf24;font-size:18px;font-weight:800;letter-spacing:2px;margin:8px 0 14px;align-self:center}
+        .s-section{color:#94a3b8;font-size:10px;letter-spacing:1.5px;margin-top:10px;margin-bottom:5px;text-transform:uppercase;align-self:center}
+        .s-btn{background:rgba(255,255,255,.08);color:#e2e8f0;font-size:12px;font-weight:600;padding:9px 22px;border-radius:18px;border:1px solid rgba(255,255,255,.12);cursor:pointer;margin-bottom:6px;min-width:240px;max-width:280px;text-align:center;align-self:center}
         .s-btn:active{transform:scale(.94);background:rgba(255,255,255,.15)}
         .s-btn.active{background:rgba(245,158,11,.2);border-color:rgba(245,158,11,.4);color:#fbbf24}
-        .s-slider-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;width:100%;max-width:280px;align-self:center}
-        .s-slider-label{color:#94a3b8;font-size:11px;min-width:60px}
-        .s-slider-val{color:#fbbf24;font-size:11px;font-weight:700;min-width:30px;text-align:right}
+        .s-slider-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;width:100%;max-width:280px;align-self:center}
+        .s-slider-label{color:#94a3b8;font-size:10px;min-width:64px}
+        .s-slider-val{color:#fbbf24;font-size:10px;font-weight:700;min-width:32px;text-align:right}
         input[type=range]{-webkit-appearance:none;flex:1;height:4px;background:rgba(255,255,255,.15);border-radius:2px;outline:none}
-        input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#f59e0b;cursor:pointer}
-        .s-cheat{display:flex;gap:8px;margin-top:14px;width:100%;max-width:280px;align-self:center}
-        .s-cheat input{flex:1;padding:9px 14px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.15);color:#fff;font-size:13px;border-radius:18px;outline:none}
+        input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#f59e0b;cursor:pointer}
+        .s-cheat{display:flex;gap:6px;margin-top:10px;width:100%;max-width:280px;align-self:center}
+        .s-cheat input{flex:1;padding:8px 12px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.15);color:#fff;font-size:12px;border-radius:16px;outline:none}
         .s-cheat input:focus{border-color:#f59e0b}
-        .s-cheat button{padding:9px 16px;background:#f59e0b;color:#111;border:none;border-radius:18px;font-weight:700;font-size:13px;cursor:pointer}
+        .s-cheat button{padding:8px 14px;background:#f59e0b;color:#111;border:none;border-radius:16px;font-weight:700;font-size:12px;cursor:pointer}
         .s-cheat button:active{transform:scale(.94)}
-        .s-cheat-hint{color:#64748b;font-size:10px;margin-top:8px;text-align:center;width:100%;max-width:280px;align-self:center}
-        .s-close{background:linear-gradient(135deg,#f59e0b,#d97706)!important;color:#111!important;font-weight:700!important;margin-top:16px}
+        .s-cheat-hint{color:#64748b;font-size:9px;margin-top:6px;text-align:center;width:100%;max-width:280px;align-self:center;line-height:1.5}
+        .s-close{background:linear-gradient(135deg,#f59e0b,#d97706)!important;color:#111!important;font-weight:700!important;margin-top:14px}
 
         /* ── TROLL POPUPS ── */
-        #trollPopup{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);z-index:50;display:none;pointer-events:none;text-align:center;animation:trollIn .3s ease-out}
+        #trollPopup{position:absolute;bottom:96px;left:50%;transform:translateX(-50%);z-index:50;display:none;pointer-events:none;text-align:center;animation:trollIn .3s ease-out;max-width:90%}
         @keyframes trollIn{0%{opacity:0;transform:translateX(-50%) scale(.7)}100%{opacity:1;transform:translateX(-50%) scale(1)}}
-        .t-box{background:rgba(0,0,0,.75);color:#fbbf24;font-size:13px;font-weight:700;padding:8px 16px;border-radius:10px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);letter-spacing:.5px;line-height:1.4;max-width:260px}
+        .t-box{background:rgba(0,0,0,.75);color:#fbbf24;font-size:12px;font-weight:700;padding:7px 14px;border-radius:10px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);letter-spacing:.5px;line-height:1.4;max-width:260px;display:inline-block}
         .t-box.troll-achievement{border:2px solid #f59e0b;background:rgba(17,24,39,.85);color:#fff}
-        .t-ach-title{color:#f59e0b;font-size:12px;letter-spacing:2px;margin-bottom:4px}
-        .t-ach-body{font-size:13px;color:#e2e8f0}
+        .t-ach-title{color:#f59e0b;font-size:11px;letter-spacing:2px;margin-bottom:3px}
+        .t-ach-body{font-size:12px;color:#e2e8f0}
 
         /* ── FAKE NOTIFICATION ── */
-        #fakeNotif{position:absolute;top:30px;left:50%;transform:translateX(-50%);z-index:55;display:none;pointer-events:none;background:rgba(17,24,39,.9);color:#e2e8f0;font-size:11px;padding:8px 16px;border-radius:8px;border-left:3px solid #f59e0b;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:notifSlide .4s ease-out;max-width:260px}
+        #fakeNotif{position:absolute;top:80px;left:50%;transform:translateX(-50%);z-index:55;display:none;pointer-events:none;background:rgba(17,24,39,.9);color:#e2e8f0;font-size:11px;padding:7px 14px;border-radius:8px;border-left:3px solid #f59e0b;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:notifSlide .4s ease-out;max-width:260px;line-height:1.4}
         @keyframes notifSlide{0%{opacity:0;transform:translateX(-50%) translateY(-20px)}100%{opacity:1;transform:translateX(-50%) translateY(0)}}
-        .notif-icon{color:#f59e0b;font-weight:800;margin-right:6px}
+        .notif-icon{color:#f59e0b;font-weight:800;margin-right:5px}
 
         /* ── CONTROL REVERSAL INDICATOR ── */
-        #reverseIndicator{position:absolute;top:50px;left:50%;transform:translateX(-50%);z-index:25;display:none;pointer-events:none;color:#ef4444;font-size:14px;font-weight:700;background:rgba(0,0,0,.6);padding:6px 14px;border-radius:10px;animation:revBlink .5s step-end infinite}
+        #reverseIndicator{position:absolute;top:80px;left:50%;transform:translateX(-50%);z-index:25;display:none;pointer-events:none;color:#ef4444;font-size:13px;font-weight:700;background:rgba(0,0,0,.6);padding:5px 12px;border-radius:10px;animation:revBlink .5s step-end infinite}
         @keyframes revBlink{0%,100%{opacity:1}50%{opacity:0}}
 
         /* ── MILESTONE BANNER ── */
-        #milestoneBanner{position:absolute;top:50px;left:50%;transform:translateX(-50%);z-index:40;display:none;pointer-events:none}
-        .ms-box{background:rgba(0,0,0,.7);padding:10px 20px;border-radius:12px;border:2px solid #f59e0b;text-align:center;animation:msIn .4s ease-out}
+        #milestoneBanner{position:absolute;top:80px;left:50%;transform:translateX(-50%);z-index:40;display:none;pointer-events:none;max-width:90%}
+        .ms-box{background:rgba(0,0,0,.75);padding:9px 18px;border-radius:12px;border:2px solid #f59e0b;text-align:center;animation:msIn .4s ease-out}
         @keyframes msIn{0%{opacity:0;transform:scale(.6)}100%{opacity:1;transform:scale(1)}}
-        .ms-km{color:#fbbf24;font-size:18px;font-weight:800}
-        .ms-msg{color:#e2e8f0;font-size:12px;margin-top:4px}
+        .ms-km{color:#fbbf24;font-size:16px;font-weight:800}
+        .ms-msg{color:#e2e8f0;font-size:11px;margin-top:3px;line-height:1.4}
 
         /* ── DEBUG OVERLAY ── */
-        #debugOverlay{position:absolute;top:0;left:0;background:rgba(0,0,0,.8);color:#22c55e;font-family:monospace;font-size:10px;padding:8px;line-height:1.4;z-index:90;display:none;pointer-events:none;white-space:pre;border-radius:0 0 6px 0}
+        #debugOverlay{position:absolute;top:0;right:0;background:rgba(0,0,0,.8);color:#22c55e;font-family:monospace;font-size:9px;padding:6px;line-height:1.4;z-index:90;display:none;pointer-events:none;white-space:pre;border-radius:0 0 0 6px;max-width:50%}
 
         /* ── WAVE ANNOUNCEMENT ── */
         #waveAnnounce{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);z-index:45;display:none;pointer-events:none;text-align:center;animation:waveIn .5s ease-out}
         @keyframes waveIn{0%{opacity:0;transform:translate(-50%,-50%) scale(2)}100%{opacity:1;transform:translate(-50%,-50%) scale(1)}}
-        .wa-text{color:#ef4444;font-size:32px;font-weight:800;letter-spacing:3px;text-shadow:0 0 30px rgba(239,68,68,.6)}
-        .wa-sub{color:#fbbf24;font-size:14px;margin-top:6px;letter-spacing:1px}
+        .wa-text{color:#ef4444;font-size:30px;font-weight:800;letter-spacing:3px;text-shadow:0 0 30px rgba(239,68,68,.6)}
+        .wa-sub{color:#fbbf24;font-size:13px;margin-top:5px;letter-spacing:1px}
+
+        /* ── MISSION BANNER (simulator) ── */
+        #missionBanner{position:absolute;top:80px;left:50%;transform:translateX(-50%);z-index:42;display:none;pointer-events:none;background:rgba(0,0,0,.8);padding:8px 16px;border-radius:10px;border-left:3px solid #22c55e;max-width:90%}
+        .mb-icon{color:#22c55e;font-weight:800;margin-right:5px}
+        .mb-text{color:#e2e8f0;font-size:11px;line-height:1.4}
 
         /* ── REDUCED MOTION (a11y) ── */
         @media (prefers-reduced-motion: reduce){
             *{animation-duration:0.01ms!important;transition-duration:0.01ms!important}
+        }
+
+        /* ── SMALL SCREEN TWEAKS ── */
+        @media (max-width: 480px){
+            .mode-card{min-height:100px;padding:10px}
+            .mode-icon{font-size:24px}
+            .w-title{font-size:20px}
+        }
+        @media (max-height: 480px){
+            .w-logo{width:60px;height:60px;margin-bottom:6px}
+            .w-title{font-size:18px;margin-bottom:1px}
+            .w-sub{font-size:10px;margin-bottom:2px}
+            .w-ver{margin-bottom:8px}
+            .w-msg{margin-bottom:10px;font-size:11px}
+            .mode-grid{margin-bottom:10px}
         }
     </style>
 </head>
@@ -220,15 +257,20 @@
         <div id="ammoHud">30 / 120</div>
         <div id="waveHud">WAVE 1</div>
         <div id="killHud">Kills: 0</div>
+        <div id="healthFill-wrap"><div id="healthBar"><div id="healthFill"></div></div></div>
     </div>
-    <div id="healthBar"><div id="healthFill"></div></div>
-    <div id="coinCounter">0</div>
+    <div id="modeHud">
+        <div id="modeScoreHud">0</div>
+        <div id="modeInfoHud"></div>
+        <div id="modeStatusHud"></div>
+    </div>
+    <div id="coinCounter">🪙 0</div>
     <div id="boostLabel">BOOST</div>
     <div id="boostBar"><div id="boostFill"></div></div>
     <div id="speedoWrap"><div id="speedoBg"></div><div id="speedoDial"></div></div>
-    <div id="pauseBtn">⏸</div>
-    <div id="settingsBtn">⚙</div>
-    <div id="cameraModeBtn">📷</div>
+    <div id="pauseBtn" class="ctl-btn" aria-label="Tạm dừng">⏸</div>
+    <div id="settingsBtn" class="ctl-btn" aria-label="Cài đặt">⚙</div>
+    <div id="cameraModeBtn" class="ctl-btn" aria-label="Đổi camera">📷</div>
     <div id="musicIndicator"><span id="musicTrackName">♪ Music</span><span id="musicToggleBtn">⏸</span></div>
     <div id="crosshair"></div>
     <div id="crosshairDot"></div>
@@ -245,30 +287,58 @@
         <div id="bShoot">🔫</div>
         <div id="bReload">🔄</div>
     </div>
+    <div id="fpsControls">
+        <div id="fpsMoveBtn">🎯</div>
+        <div id="fpsShootBtn">🔫</div>
+        <div id="fpsJumpBtn">⤴</div>
+        <div id="fpsReloadBtn">🔄</div>
+    </div>
+    <div id="simControls">
+        <div class="cb sim-ctl" id="bSimL">◀</div>
+        <div class="cb sim-ctl" id="bSimR">▶</div>
+        <div class="cb sim-ctl" id="bSimG">▲</div>
+        <div class="cb sim-ctl" id="bSimB">▼</div>
+    </div>
     <div id="reverseIndicator">⚠ ĐIỀU KHIỂN ĐẢO NGƯỢC!</div>
     <div id="trollPopup"><div class="t-box" id="trollBox"></div></div>
     <div id="fakeNotif"><span id="fakeNotifText"></span></div>
     <div id="milestoneBanner"><div class="ms-box"><div class="ms-km" id="msKm"></div><div class="ms-msg" id="msMsg"></div></div></div>
+    <div id="missionBanner"><span class="mb-icon">🎯</span><span class="mb-text" id="missionText"></span></div>
     <div id="waveAnnounce"><div class="wa-text" id="waText"></div><div class="wa-sub" id="waSub"></div></div>
     <div id="debugOverlay"></div>
 
     <!-- Welcome / Mode Select -->
     <div id="welcomeScreen">
-        <img src="../favicon.svg" class="w-logo" alt="Logo">
+        <img src="../Logo.png" class="w-logo" alt="Logo">
         <div class="w-title">SA MẠC ẢO GIÁC</div>
         <div class="w-sub">DESERT MIRAGE</div>
-        <div class="w-ver">v0.9</div>
-        <div class="w-msg">Chọn chế độ chơi</div>
+        <div class="w-ver">v1.0 — OFFICIAL RELEASE</div>
+        <div class="w-msg">Chọn chế độ chơi — 5 chế độ với trải nghiệm hoàn toàn khác biệt</div>
         <div class="mode-grid">
             <div class="mode-card" id="modeDesert">
                 <div class="mode-icon">🏜️</div>
                 <div class="mode-name">SA MẠC</div>
-                <div class="mode-desc">Đua xe trên sa mạc, tránh chướng ngại vật</div>
+                <div class="mode-desc">Đua xe sa mạc, né chướng ngại, ăn coin, sống sót</div>
             </div>
             <div class="mode-card" id="modeZombie">
                 <div class="mode-icon">🧟</div>
                 <div class="mode-name">ZOMBIE</div>
-                <div class="mode-desc">Bắn súng sinh tồn, sống sót qua từng đợt</div>
+                <div class="mode-desc">Bắn súng sinh tồn, sống sót qua từng đợt zombie</div>
+            </div>
+            <div class="mode-card" id="modeFps">
+                <div class="mode-icon">🎮</div>
+                <div class="mode-name">FPS</div>
+                <div class="mode-desc">Bắn súng góc nhìn thứ nhất, tiêu diệt kẻ địch</div>
+            </div>
+            <div class="mode-card" id="modeSim">
+                <div class="mode-icon">🚙</div>
+                <div class="mode-name">SIMULATOR</div>
+                <div class="mode-desc">Lái xe tự do, map lớn, NPC, hệ thống nhiệm vụ</div>
+            </div>
+            <div class="mode-card" id="modeTime">
+                <div class="mode-icon">⏱️</div>
+                <div class="mode-name">TIME ATTACK</div>
+                <div class="mode-desc">Đua với thời gian, không chết, đạt kỷ lục</div>
             </div>
         </div>
         <button class="play-btn" id="playBtn" aria-label="Bắt đầu chơi">CHƠI NGAY</button>
@@ -285,19 +355,43 @@
     </div>
 
     <!-- Death (Desert) -->
-    <div id="deathScreen" role="dialog" aria-label="Game Over">
-        <div class="d-t">XE ĐÃ HỎNG!</div>
-        <div class="d-d" id="deathDist">Bạn đã đi được 0.00km rồi, cố lên!</div>
-        <div class="d-best" id="deathBest">Kỷ lục: 0.00 km</div>
-        <button class="d-b" id="replayBtn" aria-label="Chơi lại">CHƠI LẠI</button>
+    <div id="deathScreen" class="end-screen" role="dialog" aria-label="Game Over">
+        <div class="end-t">XE ĐÃ HỎNG!</div>
+        <div class="end-d" id="deathDist">Bạn đã đi được 0.00km rồi, cố lên!</div>
+        <div class="end-best" id="deathBest">Kỷ lục: 0.00 km</div>
+        <button class="end-b" id="replayBtn" aria-label="Chơi lại">CHƠI LẠI</button>
     </div>
 
     <!-- Death (Zombie) -->
-    <div id="zombieDeathScreen" role="dialog" aria-label="Game Over">
-        <div class="zd-t">💀 BẠN ĐÃ CHẾT!</div>
-        <div class="zd-d" id="zombieDeathInfo">Wave: 1 | Kills: 0</div>
-        <div class="zd-best" id="zombieDeathBest">Kỷ lục: Wave 0</div>
-        <button class="zd-b" id="zombieReplayBtn" aria-label="Chơi lại">CHƠI LẠI</button>
+    <div id="zombieDeathScreen" class="end-screen" role="dialog" aria-label="Game Over">
+        <div class="end-t">💀 BẠN ĐÃ CHẾT!</div>
+        <div class="end-d" id="zombieDeathInfo">Wave: 1 | Kills: 0</div>
+        <div class="end-best" id="zombieDeathBest">Kỷ lục: Wave 0</div>
+        <button class="end-b" id="zombieReplayBtn" aria-label="Chơi lại">CHƠI LẠI</button>
+    </div>
+
+    <!-- Death (FPS) -->
+    <div id="fpsDeathScreen" class="end-screen" role="dialog" aria-label="Game Over">
+        <div class="end-t">GAME OVER</div>
+        <div class="end-d" id="fpsDeathInfo">Kills: 0 | Wave: 1</div>
+        <div class="end-best" id="fpsDeathBest">Kỷ lục: 0 kills</div>
+        <button class="end-b" id="fpsReplayBtn" aria-label="Chơi lại">CHƠI LẠI</button>
+    </div>
+
+    <!-- Death (Simulator) -->
+    <div id="simEndScreen" class="end-screen" role="dialog" aria-label="Kết thúc">
+        <div class="end-t">🏁 KẾT THÚC</div>
+        <div class="end-d" id="simEndInfo">Nhiệm vụ: 0/3</div>
+        <div class="end-best" id="simEndBest">Tổng km: 0.00</div>
+        <button class="end-b" id="simReplayBtn" aria-label="Chơi lại">CHƠI LẠI</button>
+    </div>
+
+    <!-- Death (Time Attack) -->
+    <div id="timeEndScreen" class="end-screen" role="dialog" aria-label="Hết giờ">
+        <div class="end-t">⏰ HẾT GIỜ!</div>
+        <div class="end-d" id="timeEndInfo">Quãng đường: 0.00 km</div>
+        <div class="end-best" id="timeEndBest">Kỷ lục: 0.00 km</div>
+        <button class="end-b" id="timeReplayBtn" aria-label="Chơi lại">CHƠI LẠI</button>
     </div>
 
     <!-- Easter Egg -->
@@ -349,6 +443,11 @@
             <input type="range" id="engineVolSlider" min="0" max="100" value="30" step="5">
             <span class="s-slider-val" id="engineVolVal">30%</span>
         </div>
+        <div class="s-slider-row">
+            <span class="s-slider-label">Music Vol</span>
+            <input type="range" id="musicVolSlider" min="0" max="100" value="50" step="5">
+            <span class="s-slider-val" id="musicVolVal">50%</span>
+        </div>
         <div class="s-section">GIAO DIỆN</div>
         <button class="s-btn" id="toggleHud">📊 Bật/Tắt HUD</button>
         <button class="s-btn" id="toggleDebug">🐛 Bật/Tắt debug</button>
@@ -364,11 +463,11 @@
         </div>
         <div class="s-section">CHEAT CODES</div>
         <div class="s-cheat">
-            <input type="text" id="cheatInput" placeholder="ghost / fly / big / small / reset / coin / speed" autocomplete="off">
+            <input type="text" id="cheatInput" placeholder="ghost / fly / big / god / ammo / speed" autocomplete="off">
             <button id="cheatSubmit">OK</button>
         </div>
         <div class="s-cheat-hint">Hoặc gõ: iddqd, trololol, Konami (↑↑↓↓←→←→ba)</div>
-        <button class="s-btn s-close" id="settingsClose" style="margin-top:20px">ĐÓNG</button>
+        <button class="s-btn s-close" id="settingsClose" style="margin-top:16px">ĐÓNG</button>
     </div>
 
     <script src="three.min.js"></script>

@@ -46,32 +46,15 @@ public class LoadingActivity extends AppCompatActivity {
 
         hideSystemUI();
 
-        // Set loading background image from assets
+        // v1.0: Set loading background image from assets (was manhinhload.png,
+        // now banner.png per user request).
         ImageView loadingBg = findViewById(R.id.loadingBackground);
-        try (InputStream is = getAssets().open("manhinhload.png")) {
-            // FIX: downsample large bitmap to prevent OOM on low-end devices
-            BitmapFactory.Options opts = new BitmapFactory.Options();
-            opts.inJustDecodeBounds = true;
-            BitmapFactory.decodeStream(is, null, opts);
-            opts.inSampleSize = calculateInSampleSize(opts, 720, 1280);
-            opts.inJustDecodeBounds = false;
-            // Re-open stream after bounds check
-            try (InputStream is2 = getAssets().open("manhinhload.png")) {
-                Bitmap bitmap = BitmapFactory.decodeStream(is2, null, opts);
-                // v0.7 FIX: decodeStream can return null on OOM / corrupt
-                // PNG. setImageBitmap(null) is technically safe but leaves
-                // a transparent ImageView, so we only set the bitmap if it
-                // actually decoded. The fall-through background color
-                // (@color/loading_bg) will show otherwise.
-                if (bitmap != null) {
-                    loadingBg.setImageBitmap(bitmap);
-                } else {
-                    Log.w("LoadingActivity", "manhinhload.png decoded to null");
-                }
-            }
-        } catch (Exception e) {
-            Log.w("LoadingActivity", "Could not load manhinhload.png", e);
-        }
+        loadAssetBitmap(loadingBg, "banner.png", 720, 1280);
+
+        // v1.0: Load game logo from assets (Logo.png). The ImageView is
+        // already declared in activity_loading.xml but was never set.
+        ImageView logoImage = findViewById(R.id.logoImage);
+        loadAssetBitmap(logoImage, "Logo.png", 240, 240);
 
         progressBar = findViewById(R.id.loadingProgressBar);
         loadingText = findViewById(R.id.loadingText);
@@ -93,6 +76,32 @@ public class LoadingActivity extends AppCompatActivity {
             }
         }
         return inSampleSize;
+    }
+
+    /**
+     * v1.0: Helper to load a bitmap from the assets folder with proper
+     * downsampling. Sets the bitmap on the ImageView if decoding succeeds,
+     * logs a warning otherwise (the underlying background color shows).
+     */
+    private void loadAssetBitmap(ImageView target, String assetName, int reqW, int reqH) {
+        if (target == null) return;
+        try (InputStream is = getAssets().open(assetName)) {
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inJustDecodeBounds = true;
+            BitmapFactory.decodeStream(is, null, opts);
+            opts.inSampleSize = calculateInSampleSize(opts, reqW, reqH);
+            opts.inJustDecodeBounds = false;
+            try (InputStream is2 = getAssets().open(assetName)) {
+                Bitmap bitmap = BitmapFactory.decodeStream(is2, null, opts);
+                if (bitmap != null) {
+                    target.setImageBitmap(bitmap);
+                } else {
+                    Log.w("LoadingActivity", assetName + " decoded to null");
+                }
+            }
+        } catch (Exception e) {
+            Log.w("LoadingActivity", "Could not load " + assetName, e);
+        }
     }
 
     private void startLoading() {

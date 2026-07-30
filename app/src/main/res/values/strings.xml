@@ -15,9 +15,15 @@
     <string name="settings_debug">Bật/Tắt debug</string>
     <string name="music_channel_name">Sa Mạc Ảo Giác Music</string>
     <string name="music_channel_desc">Background music player</string>
-    <!-- v0.9: Game modes -->
+    <!-- v1.0: Game modes (5 total) -->
     <string name="mode_desert">Sa Mạc</string>
     <string name="mode_zombie">Zombie</string>
+    <string name="mode_fps">FPS</string>
+    <string name="mode_sim">Simulator</string>
+    <string name="mode_time">Time Attack</string>
     <string name="mode_desert_desc">Đua xe trên sa mạc, tránh chướng ngại vật</string>
     <string name="mode_zombie_desc">Bắn súng sinh tồn, sống sót qua từng đợt</string>
+    <string name="mode_fps_desc">Bắn súng góc nhìn thứ nhất, tiêu diệt kẻ địch</string>
+    <string name="mode_sim_desc">Lái xe tự do, map lớn, NPC, hệ thống nhiệm vụ</string>
+    <string name="mode_time_desc">Đua với thời gian, không chết, đạt kỷ lục</string>
 </resources>
